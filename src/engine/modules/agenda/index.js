@@ -43,6 +43,8 @@ export const ACCEPTED_SPORT_TYPES = [
   "Velomobile",
 ];
 
+export const REPROCESS_ON_DELETE = true;
+
 /**
  * Consolidação dos dados do período do evento para o atleta.
  * Busca agenda_daily + agenda_goals em uma única query com LEFT JOIN.
