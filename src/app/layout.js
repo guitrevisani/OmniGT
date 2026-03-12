@@ -1,5 +1,7 @@
+// /src/app/layout.js
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import OneSignalInit from "@/components/OneSignalInit";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,6 +27,7 @@ export default function RootLayout({ children }) {
       <meta name="robots" content="noindex,nofollow" />
       <link rel="icon" href="/favicon.png" />
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
+        <OneSignalInit />
         {children}
       </body>
     </html>

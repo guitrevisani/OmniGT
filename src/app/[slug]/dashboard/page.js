@@ -1,6 +1,7 @@
-import { cookies } from "next/headers";
+// /src/app/[slug]/dashboard/page.js
 import { redirect } from "next/navigation";
 import { query } from "@/lib/db";
+import { getSession } from "@/lib/session";
 import AgendaDashboard from "./AgendaDashboard";
 import EstimatorDashboard from "./EstimatorDashboard";
 
@@ -10,12 +11,9 @@ const MODULE_COMPONENTS = {
 };
 
 /**
- * [slug]/dashboard/page.js
- *
  * Dispatcher server component.
  * Determina qual módulo renderizar com base no slug do módulo
- * vinculado ao evento. Imports relativos — componentes vivem
- * na mesma pasta dashboard/.
+ * vinculado ao evento.
  */
 export default async function DashboardPage({ params }) {
   const { slug } = await params;
@@ -33,15 +31,14 @@ export default async function DashboardPage({ params }) {
   const event = result.rows[0];
 
   if (event.requires_registration) {
-    const cookieStore = await cookies();
-    const session = cookieStore.get("session")?.value;
+    const session = await getSession();
     if (!session) redirect(`/${slug}/register`);
+    if (session.eventId !== event.id) redirect(`/${slug}/register`);
 
-    const stravaId = Number(session);
     const member = await query(
       `SELECT status FROM athlete_events
        WHERE strava_id = $1 AND event_id = $2 AND status = 'active'`,
-      [stravaId, event.id]
+      [session.stravaId, event.id]
     );
     if (member.rows.length === 0) redirect(`/${slug}/register`);
   }

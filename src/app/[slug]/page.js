@@ -1,64 +1,46 @@
-import { cookies } from "next/headers";
+// /src/app/[slug]/page.js
 import { redirect } from "next/navigation";
 import { query } from "@/lib/db";
+import { getSession } from "@/lib/session";
 
 /**
  * Ponto de entrada de qualquer evento.
- * O comportamento de redirect depende da flag requires_registration do módulo:
- *
- * requires_registration = true  (ex: Agenda)
- *   → logado e inscrito? /[slug]/dashboard
- *   → caso contrário?    /[slug]/register
- *
- * requires_registration = false (ex: Estimator)
- *   → sempre /[slug]/dashboard (logado ou não)
+ * requires_registration = true  → logado e inscrito? dashboard : register
+ * requires_registration = false → dashboard direto
  */
 export default async function EventIndexPage({ params }) {
   const { slug } = await params;
 
-  // ── Buscar evento + flag do módulo ────────────────────────
   const eventResult = await query(
-    `SELECT e.id, e.access_mode, m.requires_registration
+    `SELECT e.id, m.requires_registration
      FROM events e
      JOIN modules m ON m.id = e.module_id
      WHERE e.slug = $1 AND e.is_active = true`,
     [slug]
   );
 
-  if (eventResult.rows.length === 0) {
-    redirect("/");
-  }
+  if (eventResult.rows.length === 0) redirect("/");
 
   const event = eventResult.rows[0];
 
-  // ── Módulo público → dashboard direto ────────────────────
   if (!event.requires_registration) {
     redirect(`/${slug}/dashboard`);
   }
 
-  // ── Módulo com inscrição → verificar sessão ───────────────
-  const cookieStore = await cookies();
-  const session = cookieStore.get("session")?.value;
+  const session = await getSession();
 
-  if (!session) {
-    redirect(`/${slug}/register`);
-  }
+  if (!session) redirect(`/${slug}/register`);
 
-  const stravaId = Number(session);
+  // Confirmar que a sessão pertence a este evento
+  if (session.eventId !== event.id) redirect(`/${slug}/register`);
 
   try {
     const memberResult = await query(
-      `SELECT ae.status
-       FROM athlete_events ae
-       WHERE ae.strava_id = $1
-         AND ae.event_id = $2
-         AND ae.status = 'active'`,
-      [stravaId, event.id]
+      `SELECT status FROM athlete_events
+       WHERE strava_id = $1 AND event_id = $2 AND status = 'active'`,
+      [session.stravaId, event.id]
     );
-
-    if (memberResult.rows.length === 0) {
-      redirect(`/${slug}/register`);
-    }
+    if (memberResult.rows.length === 0) redirect(`/${slug}/register`);
   } catch {
     redirect(`/${slug}/register`);
   }

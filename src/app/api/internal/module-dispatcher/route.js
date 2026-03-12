@@ -223,6 +223,12 @@ export async function POST(request) {
            WHERE strava_activity_id = $1`,
           [activityId]
         );
+
+        // ── Notificação push ──────────────────────────────
+        // Dispara para todos os atletas do evento com opt-in ativo
+        for (const eventId of processedEvents) {
+          sendPushNotification(eventId, pendingResult.rows.find(r => r.event_id === eventId)?.event_name || "");
+        }
       }
     }
 
@@ -262,4 +268,39 @@ async function markProcessed(eventId, activityId, moduleSlug) {
      WHERE event_id = $2 AND strava_activity_id = $3`,
     [JSON.stringify({ [moduleSlug]: true }), eventId, activityId]
   );
+}
+
+/**
+ * Dispara notificação push via OneSignal REST API.
+ * Segmenta por tag event_<slug> — apenas atletas com opt-in ativo recebem.
+ * Fire-and-forget: erros são logados mas não afetam o fluxo principal.
+ */
+function sendPushNotification(eventId, eventName) {
+  const appId  = process.env.ONESIGNAL_APP_ID;
+  const apiKey = process.env.ONESIGNAL_API_KEY;
+  if (!appId || !apiKey) return;
+
+  // Buscar slug do evento para filtrar por tag
+  query(`SELECT slug FROM events WHERE id = $1`, [eventId])
+    .then(result => {
+      if (result.rows.length === 0) return;
+      const slug = result.rows[0].slug;
+
+      fetch("https://onesignal.com/api/v1/notifications", {
+        method:  "POST",
+        headers: {
+          "Content-Type":  "application/json",
+          "Authorization": `Basic ${apiKey}`,
+        },
+        body: JSON.stringify({
+          app_id:   appId,
+          headings: { pt: eventName || "OGT Event Engine" },
+          contents: { pt: "Nova atividade processada e descrição atualizada." },
+          filters:  [
+            { field: "tag", key: `event_${slug}`, relation: "=", value: "true" },
+          ],
+        }),
+      }).catch(err => console.error("[Dispatcher] Erro ao enviar push:", err));
+    })
+    .catch(err => console.error("[Dispatcher] Erro ao buscar slug para push:", err));
 }

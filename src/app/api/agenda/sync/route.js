@@ -1,18 +1,13 @@
 // /src/app/api/agenda/sync/route.js
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { query } from "@/lib/db";
+import { getSession } from "@/lib/session";
 
 export const runtime = "nodejs";
 
 /**
  * POST /api/agenda/sync
- *
- * Rota pública intermediária para disparo manual do backfill.
- * O secret nunca é exposto ao cliente — a chamada ao backfill
- * é feita server-side com o INTERNAL_WORKER_SECRET.
- *
- * Requer sessão ativa e inscrição no evento.
+ * Disparo manual do backfill pelo próprio atleta.
  */
 export async function POST(request) {
   try {
@@ -22,19 +17,15 @@ export async function POST(request) {
       return NextResponse.json({ error: "slug ausente" }, { status: 400 });
     }
 
-    // ── Verificar sessão ──────────────────────────────────
-    const cookieStore = await cookies();
-    const session     = cookieStore.get("session")?.value;
-    const stravaId    = session ? Number(session) : null;
-
-    if (!stravaId) {
+    const session = await getSession();
+    if (!session) {
       return NextResponse.json({ error: "Sessão inválida" }, { status: 401 });
     }
 
-    // ── Buscar evento ─────────────────────────────────────
+    const { stravaId } = session;
+
     const eventResult = await query(
-      `SELECT e.id FROM events e
-       WHERE e.slug = $1 AND e.is_active = true`,
+      `SELECT e.id FROM events e WHERE e.slug = $1 AND e.is_active = true`,
       [slug]
     );
 
@@ -44,7 +35,11 @@ export async function POST(request) {
 
     const eventId = eventResult.rows[0].id;
 
-    // ── Verificar inscrição ───────────────────────────────
+    // Confirmar que a sessão pertence a este evento
+    if (session.eventId !== eventId) {
+      return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
+    }
+
     const memberResult = await query(
       `SELECT role FROM athlete_events
        WHERE strava_id = $1 AND event_id = $2 AND status = 'active'`,
@@ -55,7 +50,6 @@ export async function POST(request) {
       return NextResponse.json({ error: "Não inscrito neste evento" }, { status: 403 });
     }
 
-    // ── Disparar backfill server-side ─────────────────────
     const base = process.env.INTERNAL_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
 
     const backfillRes = await fetch(`${base}/api/agenda/backfill`, {

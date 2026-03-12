@@ -193,6 +193,75 @@ function SectionTitle({children}) {
   );
 }
 
+function LogoutButton({ slug }) {
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = `/${slug}/register`;
+  }
+
+  return (
+    <button
+      onClick={handleLogout}
+      style={{
+        background:    "transparent",
+        border:        "none",
+        color:         "#444",
+        fontFamily:    "'DM Mono', monospace",
+        fontSize:      11,
+        letterSpacing: "0.08em",
+        cursor:        "pointer",
+        padding:       0,
+      }}
+    >
+      sair deste dispositivo
+    </button>
+  );
+}
+
+// ─── Botão de notificações push ──────────────────────────────────────────────
+
+function PushButton({ status }) {
+  async function handleToggle() {
+    if (!window.OneSignalDeferred) return;
+    window.OneSignalDeferred.push(async (OneSignal) => {
+      if (status === "subscribed") {
+        await OneSignal.User.PushSubscription.optOut();
+      } else {
+        await OneSignal.User.PushSubscription.optIn();
+      }
+    });
+  }
+
+  if (status === "idle" || status === "subscribed") {
+    const label       = status === "subscribed" ? "🔔 notificações ativas" : "🔕 ativar notificações";
+    const bg          = status === "subscribed" ? "rgba(249,115,22,0.12)" : "rgba(255,255,255,0.06)";
+    const borderColor = status === "subscribed" ? "rgba(249,115,22,0.4)"  : "rgba(255,255,255,0.12)";
+    const color       = status === "subscribed" ? "#f97316"               : "#888";
+
+    return (
+      <button
+        onClick={handleToggle}
+        style={{
+          background:   bg,
+          border:       `1px solid ${borderColor}`,
+          borderRadius: 6,
+          color,
+          fontFamily:   "'DM Mono', monospace",
+          fontSize:     11,
+          letterSpacing:"0.08em",
+          padding:      "6px 12px",
+          cursor:       "pointer",
+          transition:   "all 0.2s ease",
+        }}
+      >
+        {label}
+      </button>
+    );
+  }
+
+  return null;
+}
+
 // ─── Botão de sincronização manual ──────────────────────────────────────────
 
 function SyncButton({ slug, onSuccess }) {
@@ -257,9 +326,10 @@ function SyncButton({ slug, onSuccess }) {
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export default function AgendaDashboard({ slug }) {
-  const [data,    setData]    = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState(null);
+  const [data,       setData]       = useState(null);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState(null);
+  const [pushStatus, setPushStatus] = useState("idle"); // idle | subscribed
 
   function loadData() {
     setLoading(true);
@@ -270,6 +340,40 @@ export default function AgendaDashboard({ slug }) {
   }
 
   useEffect(() => { loadData(); }, [slug]);
+
+  // ── Aplicar tags do evento + verificar status de push ──
+  // O SDK já foi inicializado globalmente pelo OneSignalInit.
+  // Aqui apenas vinculamos o device ao evento via tags.
+  useEffect(() => {
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push(async (OneSignal) => {
+      // Verificar status atual
+      const isSubscribed = await OneSignal.User.PushSubscription.optedIn;
+      setPushStatus(isSubscribed ? "subscribed" : "idle");
+
+      // Aplicar tag do evento neste device
+      if (isSubscribed) {
+        OneSignal.User.addTags({ [`event_${slug}`]: "true" });
+      }
+
+      // Listener para mudanças de opt-in
+      OneSignal.User.PushSubscription.addEventListener("change", async (event) => {
+        if (event.current.optedIn) {
+          const playerId = event.current.id;
+          setPushStatus("subscribed");
+          OneSignal.User.addTags({ [`event_${slug}`]: "true" });
+          // Salvar player_id no banco
+          fetch("/api/push/register", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({ player_id: playerId, platform: "web" }),
+          }).catch(err => console.error("[Push] Erro ao registrar device:", err));
+        } else {
+          setPushStatus("idle");
+        }
+      });
+    });
+  }, [slug]);
 
   const metrics = useMemo(() => data ? computeMetrics(data.daily, data.goals, data.event.start_date) : null, [data]);
 
@@ -300,6 +404,7 @@ export default function AgendaDashboard({ slug }) {
               <div style={{fontSize:11,color:"#555",fontFamily:"'DM Mono',monospace"}}>{fmtHr(goals.moving_time_sec)} hrs</div>
             </div>
             <SyncButton slug={slug} onSuccess={loadData} />
+            <PushButton status={pushStatus} />
           </div>
         </header>
 
@@ -394,6 +499,7 @@ export default function AgendaDashboard({ slug }) {
 
         <footer style={S.footer}>
           <span>OGT Event Engine</span>
+          <LogoutButton slug={slug} />
           <span>atualizado via Strava API</span>
         </footer>
       </div>
