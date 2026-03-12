@@ -343,17 +343,24 @@ export default function AgendaDashboard({ slug }) {
 
   // ── Aplicar tags do evento + verificar status de push ──
   // O SDK já foi inicializado globalmente pelo OneSignalInit.
-  // Aqui apenas vinculamos o device ao evento via tags.
+  // Se push_consent=true no banco e o device ainda não tem opt-in,
+  // dispara o prompt nativo automaticamente.
   useEffect(() => {
+    if (!data) return;
+    const pushConsentSaved = data.push_consent === true;
+
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     window.OneSignalDeferred.push(async (OneSignal) => {
-      // Verificar status atual
       const isSubscribed = await OneSignal.User.PushSubscription.optedIn;
       setPushStatus(isSubscribed ? "subscribed" : "idle");
 
-      // Aplicar tag do evento neste device
       if (isSubscribed) {
+        // Device já inscrito — garantir tags atualizadas
         OneSignal.User.addTags({ [`event_${slug}`]: "true" });
+      } else if (pushConsentSaved) {
+        // Atleta consentiu no registro mas este device ainda não tem opt-in
+        // Dispara o prompt nativo automaticamente
+        await OneSignal.User.PushSubscription.optIn();
       }
 
       // Listener para mudanças de opt-in
@@ -362,18 +369,21 @@ export default function AgendaDashboard({ slug }) {
           const playerId = event.current.id;
           setPushStatus("subscribed");
           OneSignal.User.addTags({ [`event_${slug}`]: "true" });
-          // Salvar player_id no banco
-          fetch("/api/push/register", {
-            method:  "POST",
-            headers: { "Content-Type": "application/json" },
-            body:    JSON.stringify({ player_id: playerId, platform: "web" }),
-          }).catch(err => console.error("[Push] Erro ao registrar device:", err));
+          // Aguarda 2s para garantir que o OneSignal processou o device
+          // antes de aplicar as tags via API REST
+          setTimeout(() => {
+            fetch("/api/push/register", {
+              method:  "POST",
+              headers: { "Content-Type": "application/json" },
+              body:    JSON.stringify({ player_id: playerId, platform: "web" }),
+            }).catch(err => console.error("[Push] Erro ao registrar device:", err));
+          }, 2000);
         } else {
           setPushStatus("idle");
         }
       });
     });
-  }, [slug]);
+  }, [slug, data]);
 
   const metrics = useMemo(() => data ? computeMetrics(data.daily, data.goals, data.event.start_date) : null, [data]);
 

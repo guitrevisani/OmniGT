@@ -39,7 +39,7 @@ export async function GET(request, { params }) {
     }
 
     const roleResult = await query(
-      `SELECT role FROM athlete_events
+      `SELECT role, push_consent FROM athlete_events
        WHERE strava_id = $1 AND event_id = $2 AND status = 'active'`,
       [stravaId, event.id]
     );
@@ -48,7 +48,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
     }
 
-    const role = roleResult.rows[0].role;
+    const { role, push_consent } = roleResult.rows[0];
     if (!["provider", "owner", "admin", "user"].includes(role)) {
       return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
     }
@@ -91,6 +91,7 @@ export async function GET(request, { params }) {
     }));
 
     return NextResponse.json({
+      push_consent: push_consent === true,
       event: {
         id:         event.id,
         name:       event.name,
