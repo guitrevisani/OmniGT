@@ -1,4 +1,4 @@
-# Strava Event Engine
+# OGT Event Engine
 
 Plataforma hub que conecta uma única integração OAuth com o Strava a múltiplos módulos independentes. Atletas se inscrevem em eventos e têm suas atividades processadas automaticamente — com consolidação de dados, dashboards e atualização da descrição das atividades.
 

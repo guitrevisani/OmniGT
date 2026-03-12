@@ -4,7 +4,7 @@ import { getValidAccessToken } from "@/lib/strava";
 import { runModule } from "@/engine/moduleRunner";
 import { mergeDescription } from "@/engine/mergeDescription";
 
-import agendaModule           from "@/engine/modules/agenda/index.js";
+import { ACCEPTED_SPORT_TYPES as agendaAccepted, REPROCESS_ON_DELETE as agendaReprocess } from "@/engine/modules/agenda/index.js";
 import { computeTotals }      from "@/engine/modules/agenda/computeTotals.js";
 import { buildDescription }   from "@/engine/modules/agenda/buildDescription.js";
 
@@ -26,7 +26,9 @@ const STRAVA_API = "https://www.strava.com/api/v3";
  */
 const MODULE_REGISTRY = {
   agenda: {
-    module:      agendaModule,
+    acceptedSportTypes:  agendaAccepted,
+    reprocessOnDelete:   agendaReprocess,
+    isRegistration:      false,
     consolidate: (context) => computeTotals(context),
     builders:    { buildDescription },
   },
@@ -226,7 +228,7 @@ export async function POST(request) {
 
           for (const event of eventsResult.rows) {
             const reg = MODULE_REGISTRY[event.module_slug];
-            if (reg?.module?.REPROCESS_ON_DELETE) {
+            if (reg?.reprocessOnDelete) {
               await reprocessFromDate(stravaId, event.event_id, act.start_date);
             }
           }
@@ -324,11 +326,11 @@ export async function POST(request) {
           const reg = MODULE_REGISTRY[event.module_slug];
 
           if (!reg) continue;
-          if (reg.module.isRegistration) continue;
+          if (reg.isRegistration) continue;
 
           // Verificar sport_type aceito
-          if (reg.module.ACCEPTED_SPORT_TYPES &&
-              !reg.module.ACCEPTED_SPORT_TYPES.includes(stravaActivity.sport_type)) {
+          if (reg.acceptedSportTypes &&
+              !reg.acceptedSportTypes.includes(stravaActivity.sport_type)) {
             skipped.push({ activityId, reason: `sport_not_accepted:${stravaActivity.sport_type}` });
             continue;
           }
