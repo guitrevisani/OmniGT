@@ -324,7 +324,7 @@ export default function AgendaDashboard({ slug }) {
         <div style={S.card}><BarChart data={m.monthlyData} valueKey="elev" labelKey="month" color="#a78bfa" height={80} /></div>
 
         <footer style={S.footer}>
-          <span>OmniGT · Strava Event Engine</span>
+          <span>OGT Event Engine</span>
           <span>atualizado via Strava API</span>
         </footer>
       </div>
