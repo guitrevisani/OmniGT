@@ -40,6 +40,10 @@ export default function EventRegistrationPage() {
   const handleGoalKmChange = (e) => setPersonalGoalKm(e.target.value)
   const handleGoalHoursChange = (e) => setPersonalGoalHours(e.target.value)
 
+  // Força interpretação local — evita offset UTC-3 virar dia anterior
+  const formatDate = (str) =>
+    new Date(str + "T12:00:00").toLocaleDateString()
+
   // Passa as metas como query para o OAuth
   const oauthUrl = consentGiven
     ? `/api/auth/strava/start?event=${slug}&goal_km=${encodeURIComponent(personalGoalKm)}&goal_hours=${encodeURIComponent(personalGoalHours)}`
@@ -50,8 +54,8 @@ export default function EventRegistrationPage() {
       <h1>{event.name}</h1>
       <p>
         <strong>Período:</strong>{" "}
-        {new Date(event.start_date).toLocaleDateString()} -{" "}
-        {new Date(event.end_date).toLocaleDateString()}
+        {formatDate(event.start_date)} -{" "}
+        {formatDate(event.end_date)}
       </p>
 
       <hr style={{ margin: "1rem 0" }} />
