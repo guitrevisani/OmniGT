@@ -35,6 +35,7 @@ Thumbs.db
 # Temp files
 *.~tmp
 *.tmp
+.*~tmp
 
 # Local scripts (não sobem para o repo)
 scripts/
