@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo } from "react";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function fmtKm(m)         { return (m / 1000).toFixed(1); }
+function fmtKm(m)         { return (m / 1000).toFixed(1); }  // usado em Recordes
+function fmtKmInt(m)      { return (m / 1000).toFixed(0); }  // usado em totais acumulados
 function fmtHr(sec)       { const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60); return `${h}:${String(m).padStart(2,"0")}`; }
 
 function getMonday(date) {
@@ -322,30 +323,30 @@ export default function AgendaDashboard({ slug }) {
 
         <SectionTitle>Destaques</SectionTitle>
         <div style={S.grid4}>
-          <StatCard accent label="Último dia ativo" value={`${fmtKm(m.lastActiveKm).toFixed(0)} km`} sub={`${m.lastActiveDate} · ${fmtHr(m.lastActiveSec)}`} />
-          <StatCard accent label="Sequência atual" value={`${m.streak} dias`} sub={`${fmtKm(m.streakKm).toFixed(0)} km na sequência`} />
+          <StatCard accent label="Último dia ativo" value={`${fmtKmInt(m.lastActiveKm)} km`} sub={`${m.lastActiveDate} · ${fmtHr(m.lastActiveSec)}`} />
+          <StatCard accent label="Sequência atual" value={`${m.streak} dias`} sub={`${fmtKmInt(m.streakKm)} km na sequência`} />
           <StatCard label="Dias ativos" value={m.totalActiveDays} sub="≥ 15 min em movimento" />
           <StatCard label="Total acumulado" value={`${(m.totalDistanceM/1000).toFixed(0)} km`} sub={`${fmtHr(m.totalMovingSec)} · ${m.totalElevationM.toFixed(0)} m↑`} />
         </div>
 
         <SectionTitle>Esta Semana (seg–dom)</SectionTitle>
         <div style={S.grid3}>
-          <StatCard label="Distância" value={`${fmtKm(m.weekKm).toFixed(0)} km`} />
+          <StatCard label="Distância" value={`${fmtKmInt(m.weekKm)} km`} />
           <StatCard label="Tempo" value={fmtHr(m.weekSec)} />
           <StatCard label="Elevação" value={`${m.weekElevation.toFixed(0)} m`} />
         </div>
-        <div style={{marginTop:8,marginBottom:16}}><span style={S.mono11}>7 dias corridos: <span style={{color:"#f0f0f0"}}>{fmtKm(m.rolling7Km)} km</span></span></div>
+        <div style={{marginTop:8,marginBottom:16}}><span style={S.mono11}>7 dias corridos: <span style={{color:"#f0f0f0"}}>{fmtKmInt(m.rolling7Km)} km</span></span></div>
 
         <SectionTitle>Este Mês</SectionTitle>
         <div style={S.grid3}>
-          <StatCard label="Distância" value={`${fmtKm(m.monthKm).toFixed(0)} km`} />
+          <StatCard label="Distância" value={`${fmtKmInt(m.monthKm)} km`} />
           <StatCard label="Tempo" value={fmtHr(m.monthSec)} />
           <StatCard label="Elevação" value={`${m.monthElevation.toFixed(0)} m`} />
         </div>
 
         <SectionTitle>Este Ano</SectionTitle>
         <div style={S.grid3}>
-          <StatCard label="Distância" value={`${(m.yearKm/1000).toFixed(0)} km`} />
+          <StatCard label="Distância" value={`${fmtKmInt(m.yearKm)} km`} />
           <StatCard label="Tempo" value={fmtHr(m.yearSec)} />
           <StatCard label="Elevação" value={`${m.yearElevation.toFixed(0)} m`} />
         </div>
