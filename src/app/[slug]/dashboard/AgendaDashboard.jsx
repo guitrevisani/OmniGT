@@ -322,15 +322,15 @@ export default function AgendaDashboard({ slug }) {
 
         <SectionTitle>Destaques</SectionTitle>
         <div style={S.grid4}>
-          <StatCard accent label="Último dia ativo" value={`${fmtKm(m.lastActiveKm)} km`} sub={`${m.lastActiveDate} · ${fmtHr(m.lastActiveSec)}`} />
-          <StatCard accent label="Sequência atual" value={`${m.streak} dias`} sub={`${fmtKm(m.streakKm)} km na sequência`} />
+          <StatCard accent label="Último dia ativo" value={`${fmtKm(m.lastActiveKm).toFixed(0)} km`} sub={`${m.lastActiveDate} · ${fmtHr(m.lastActiveSec)}`} />
+          <StatCard accent label="Sequência atual" value={`${m.streak} dias`} sub={`${fmtKm(m.streakKm).toFixed(0)} km na sequência`} />
           <StatCard label="Dias ativos" value={m.totalActiveDays} sub="≥ 15 min em movimento" />
           <StatCard label="Total acumulado" value={`${(m.totalDistanceM/1000).toFixed(0)} km`} sub={`${fmtHr(m.totalMovingSec)} · ${m.totalElevationM.toFixed(0)} m↑`} />
         </div>
 
         <SectionTitle>Esta Semana (seg–dom)</SectionTitle>
         <div style={S.grid3}>
-          <StatCard label="Distância" value={`${fmtKm(m.weekKm)} km`} />
+          <StatCard label="Distância" value={`${fmtKm(m.weekKm).toFixed(0)} km`} />
           <StatCard label="Tempo" value={fmtHr(m.weekSec)} />
           <StatCard label="Elevação" value={`${m.weekElevation.toFixed(0)} m`} />
         </div>
@@ -338,14 +338,14 @@ export default function AgendaDashboard({ slug }) {
 
         <SectionTitle>Este Mês</SectionTitle>
         <div style={S.grid3}>
-          <StatCard label="Distância" value={`${fmtKm(m.monthKm)} km`} />
+          <StatCard label="Distância" value={`${fmtKm(m.monthKm).toFixed(0)} km`} />
           <StatCard label="Tempo" value={fmtHr(m.monthSec)} />
           <StatCard label="Elevação" value={`${m.monthElevation.toFixed(0)} m`} />
         </div>
 
         <SectionTitle>Este Ano</SectionTitle>
         <div style={S.grid3}>
-          <StatCard label="Distância" value={`${(m.yearKm/1000).toFixed(1)}k km`} />
+          <StatCard label="Distância" value={`${(m.yearKm/1000).toFixed(0)} km`} />
           <StatCard label="Tempo" value={fmtHr(m.yearSec)} />
           <StatCard label="Elevação" value={`${m.yearElevation.toFixed(0)} m`} />
         </div>
