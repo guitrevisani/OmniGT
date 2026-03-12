@@ -35,10 +35,10 @@ function ifZones(wkg, ftpW, cfg) {
 
 function ifLabel(wkg, ftpW, cfg) {
   const IF = wkg / (ftpW / cfg.mass_kg);
-  if (IF <= 0.70) return { label: "REGENERATIVO", color: "#4db6ac" };
-  if (IF <= 0.81) return { label: "ENDURANCE",    color: "#8bc34a" };
+  if (IF <= 0.6)  return { label: "REGENERATIVO", color: "#4db6ac" };
+  if (IF <= 0.75) return { label: "ENDURANCE",    color: "#8bc34a" };
   if (IF <= 0.95) return { label: "FORTE/LIMIAR", color: "#ffc107" };
-  if (IF <= 1.04) return { label: "MÁXIMO",       color: "#ff1744" };
+  if (IF <= 1.05) return { label: "MÁXIMO",       color: "#ff1744" };
   return               { label: "HIIT",           color: "#7e0b22" };
 }
 
@@ -301,9 +301,7 @@ function WkgControl({ value, onChange, ftpW, onFtpChange, cfg }) {
           <div style={{ position:"absolute", top:"50%", left:0, right:0, height:6,
             transform:"translateY(-50%)", borderRadius:3, pointerEvents:"none",
             background:"linear-gradient(90deg,#4db6ac,#8bc34a,#ffc107,#ff5722,#7e0b22)" }} />
-          <input type="range" min="0.5" max="1.1" step="0.05"
-            value={(value / (ftpW / cfg.mass_kg)).toFixed(2)}
-            onChange={e => onChange(parseFloat(e.target.value) * (ftpW / cfg.mass_kg))} />
+          <input type="range" min="1" max="6" step="0.1" value={value} onChange={e => onChange(parseFloat(e.target.value))} />
           <div style={{ display:"flex", justifyContent:"space-between", marginTop:2 }}>
             {["Regen","Endurance","Forte","Máximo","HIIT"].map(l => (
               <div key={l} style={{ fontFamily:"'DM Mono',monospace", fontSize:9, color:"#4a5568", flex:1, textAlign:"center" }}>{l}</div>
@@ -579,7 +577,7 @@ export default function EstimatorDashboard({ slug, eventName }) {
 
     // Footer
     ctx.fillStyle = "#e2e8f0"; ctx.font = "13px monospace"; ctx.textAlign = "right";
-    ctx.fillText("OGT · OMNI GT · treine.com.gt", W - PAD, H - 12);
+    ctx.fillText("OGT · OMNI GT", W - PAD, H - 12);
 
     const a = document.createElement("a");
     a.href = canvas.toDataURL("image/png");

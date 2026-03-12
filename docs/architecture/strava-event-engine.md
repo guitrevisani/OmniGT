@@ -2,7 +2,9 @@
 
 ## Visão Geral
 
-A Strava Event Engine é uma plataforma hub que conecta uma única integração OAuth com o Strava a múltiplos módulos independentes. Cada módulo implementa uma lógica de negócio específica e opera sobre os dados de atividades de um atleta dentro do contexto de um evento.
+A Strava Event Engine é uma plataforma hub que conecta uma única integração OAuth com o Strava
+a múltiplos módulos independentes. Cada módulo implementa uma lógica de negócio específica
+e opera sobre os dados de atividades de um atleta dentro do contexto de um evento.
 
 **Terminologia:**
 - **Engine** — o framework/estrutura da plataforma
@@ -32,6 +34,7 @@ A Strava Event Engine é uma plataforma hub que conecta uma única integração 
 | Query | `pg` (Pool direto, sem ORM) |
 | Deploy | Vercel |
 | Auth | OAuth 2.0 via Strava |
+| Push | OneSignal (Web Push) |
 
 ---
 
@@ -41,7 +44,7 @@ A Strava Event Engine é uma plataforma hub que conecta uma única integração 
 src/
   app/
     [slug]/
-      page.js                      ← redirect por requires_registration
+      page.js                      ← redirect por requires_registration / sessão
       register/page.js             ← inscrição via OAuth Strava
       dashboard/
         page.js                    ← dispatcher server component
@@ -50,44 +53,69 @@ src/
     api/
       auth/strava/
         start/route.js             ← inicia OAuth
-        callback/route.js          ← finaliza OAuth, salva atleta, dispara backfill
+        callback/route.js          ← finaliza OAuth, cria sessão, dispara backfill
+        logout/route.js            ← destroi sessão, limpa cookie
       agenda/
         [slug]/route.js            ← GET dados do dashboard Agenda
         backfill/route.js          ← POST backfill histórico de atividades
+        sync/route.js              ← POST sync manual pelo atleta
       estimator/
         [slug]/route.js            ← GET configs do evento Estimator (público)
       events/
         route.js
         create/route.js
+      push/
+        register/route.js          ← POST registra player_id + aplica tags OneSignal
       internal/
         strava-worker/route.js     ← COLETOR de dados brutos
-        module-dispatcher/route.js ← PROCESSADOR por módulo
+        module-dispatcher/route.js ← PROCESSADOR por módulo + disparo de push
         validate-access/route.js
         role/route.js
       stravaWebhook/route.js       ← recebe webhooks do Strava
     provider/
       page.js, layout.js, ...      ← área restrita do provider
+  components/
+    OneSignalInit.jsx              ← inicialização global do SDK OneSignal
   engine/
     modules/
       agenda/
-        index.js                   ← constantes (ACCEPTED_SPORT_TYPES, REPROCESS_ON_DELETE)
-        buildDescription.js        ← gera bloco de texto para a descrição
-        computeDashboard.js        ← agrega dados para o dashboard
-        computeTotals.js           ← calcula totais do período
-    moduleRunner.js                ← executor genérico de módulos
-    mergeDescription.js            ← agrega blocos e monta descrição final
+        index.js
+        buildDescription.js
+        computeDashboard.js
+        computeTotals.js
+    moduleRunner.js
+    mergeDescription.js
   lib/
     db.js                          ← pool PostgreSQL
     strava.js                      ← getValidAccessToken (com refresh automático)
     events.js                      ← helpers de eventos
+    session.js                     ← getSession / createSession / destroySession
 middleware.js                      ← proteção /provider e /api/internal
+public/
+  OneSignalSDKWorker.js            ← service worker para push em background
 ```
 
 ---
 
-## Roles
+## Sessões
 
-Definidos internamente pela engine. O Strava é apenas provedor de identidade.
+Ver `docs/architecture/session-management.md` para detalhes completos.
+
+O cookie `session` carrega um token UUID gerado no banco.
+Nunca expõe `strava_id` diretamente.
+
+---
+
+## Notificações Push
+
+Ver `docs/architecture/push-notifications.md` para detalhes completos.
+
+OneSignal Web Push com segmentação programática via tags.
+Disparo automático após PUT bem-sucedido no Strava.
+
+---
+
+## Roles
 
 | Role | Descrição |
 |---|---|
@@ -109,39 +137,23 @@ Strava
 ▼
 /api/stravaWebhook
 │  Grava em strava_events (auditoria)
-│  UPSERT activities (strava_id + aspect_type mínimo)
-│  Loop guard → ignora se engine fez PUT há < 120s
-│  Enfileira em activity_processing_queue
-│    CREATE/UPDATE → next_run_at = now + 300s
-│    DELETE        → next_run_at = now
+│  UPSERT activities
+│  Loop guard → descarta se PUT < 120s atrás
+│  Enfileira: CREATE/UPDATE → +300s / DELETE → now
 │  Dispara worker (fire-and-forget)
 ▼
-[aguarda delay de estabilização]
-▼
 /api/internal/strava-worker  (COLETOR)
-│  Busca itens prontos na queue (next_run_at <= now)
-│  Para cada activity:
-│    DELETE → marca last_webhook_aspect, remove da queue
-│             remoção física: TO DO (manutenção de banco)
-│    CREATE/UPDATE:
-│      GET /activities/:id no Strava (dados brutos)
-│      UPSERT activities (dados completos)
-│      UPSERT gear em athlete_gears
-│      Detecta duplicata → marca duplicate_of, pula
-│      UPSERT event_activities para cada evento ativo do atleta
-│      Dispara dispatcher (fire-and-forget)
+│  GET /activities/:id (Strava API)
+│  UPSERT activities + athlete_gears
+│  Detecta duplicata
+│  UPSERT event_activities (processed=false)
+│  Dispara dispatcher (fire-and-forget)
 ▼
 /api/internal/module-dispatcher  (PROCESSADOR)
-│  Busca event_activities pendentes (processed = false)
-│  Para cada evento:
-│    Filtra por ACCEPTED_SPORT_TYPES do módulo
-│    consolidate() → busca dados do banco
-│    build() → gera descriptionBlock
-│    Marca metadata do módulo como processado
-│  mergeDescription() → monta descrição final
-│  PUT /activities/:id no Strava (se houve mudança)
-│  Atualiza engine_last_put_at (loop guard)
-│  Marca event_activities.processed = true
+│  consolidate() → build() → mergeDescription()
+│  PUT /activities/:id (Strava API)
+│  engine_last_put_at + processed=true
+│  sendPushNotification() (fire-and-forget)
 ```
 
 ---
@@ -151,21 +163,23 @@ Strava
 ```
 Atleta acessa /[slug]
 │
-├─ requires_registration = false → /[slug]/dashboard (sem login obrigatório)
+├─ requires_registration = false → /[slug]/dashboard
 └─ requires_registration = true  → /[slug]/register
 ▼
-/api/auth/strava/start
+/api/auth/strava/start (com params: event, keep_goals, goal_km, goal_hours, push_consent)
 ▼
 Strava OAuth
 ▼
 /api/auth/strava/callback
 │  UPSERT athletes (tokens, scopes)
-│  Determina role: provider > owner > user
-│  UPSERT athlete_events (sem downgrade de role superior)
-│  Se módulo = agenda:
-│    UPSERT agenda_goals (metas)
-│    POST /api/agenda/backfill (fire-and-forget)
-│  Set cookie session = strava_id
+│  Determina role: provider > owner > user (sem downgrade)
+│  UPSERT athlete_events (role, push_consent)
+│  Se keep_goals=1 e metas existem → mantém agenda_goals
+│  Se keep_goals=0 → UPSERT agenda_goals com novas metas
+│  Se keep_goals=1 e sem metas → redireciona com ?warn=no_goals
+│  createSession(stravaId, eventId, endDate) → token UUID
+│  Set cookie session = token
+│  Se módulo = agenda: POST /api/agenda/backfill (fire-and-forget)
 ▼
 Redirect → /[slug]
 ```
@@ -179,8 +193,8 @@ Redirect → /[slug]
 | Agenda de Treinos | `agenda` | 1 | true | true |
 | Estimator | `estimator` | 3 | false | false |
 
-Para adicionar um novo módulo ao dispatcher: adicionar entrada em `MODULE_REGISTRY`
-em `src/app/api/internal/module-dispatcher/route.js`. Nenhum outro arquivo precisa ser alterado.
+Para adicionar um módulo ao dispatcher: adicionar entrada em `MODULE_REGISTRY`
+em `src/app/api/internal/module-dispatcher/route.js`.
 
 ---
 
@@ -199,8 +213,10 @@ em `src/app/api/internal/module-dispatcher/route.js`. Nenhum outro arquivo preci
 |---|---|---|
 | `/api/auth/strava/start` | GET | Inicia OAuth |
 | `/api/auth/strava/callback` | GET | Finaliza OAuth |
+| `/api/auth/strava/logout` | POST | Logout (destroi sessão) |
 | `/api/stravaWebhook` | GET/POST | Webhook do Strava |
 | `/api/estimator/[slug]` | GET | Configs do evento (público) |
+| `/api/push/register` | POST | Registra device para push (requer sessão) |
 | `/[slug]` | GET | Redirect por sessão/módulo |
 | `/[slug]/register` | GET | Página de inscrição |
 | `/[slug]/dashboard` | GET | Dashboard do módulo |

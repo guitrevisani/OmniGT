@@ -33,7 +33,7 @@ Consolidar atividades de ciclismo de um atleta dentro do período de um evento, 
 
 ```
 src/engine/modules/agenda/
-  index.js            ← constantes (ACCEPTED_SPORT_TYPES, REPROCESS_ON_DELETE, isRegistration)
+  index.js            ← constantes (ACCEPTED_SPORT_TYPES, REPROCESS_ON_DELETE)
   buildDescription.js ← gera o descriptionBlock
   computeDashboard.js ← agrega dados para o dashboard
   computeTotals.js    ← calcula totais do período
@@ -90,21 +90,79 @@ total_moving_time_sec >= 900  (15 minutos)
 
 ---
 
+## Formatação no Dashboard
+
+| Contexto | Função | Formato |
+|---|---|---|
+| Recordes de distância | `fmtKm(m)` | 1 casa decimal (`4354.2 km`) |
+| Demais totais de distância | `fmtKmInt(m)` | Inteiro (`4354 km`) |
+| Elevação | direto em metros | Inteiro (`1840 m`) |
+| Tempo | `HH:MM` | Sem segundos |
+
+---
+
+## Fluxo de Inscrição
+
+```
+/[slug]/register
+│  Formulário:
+│    ☐ Manter metas atuais (keep_goals) — marcado por padrão
+│    ☐ Consentimento Strava — obrigatório
+│    ☐ Ativar notificações — opcional, desmarcado por padrão
+│
+│  Se keep_goals=0 → campos de meta habilitados (obrigatórios)
+│
+▼
+/api/auth/strava/start
+  params: event, keep_goals, goal_km, goal_hours, push_consent
+▼
+/api/auth/strava/callback
+  → UPSERT athlete_events (push_consent)
+  → keep_goals=1 + metas existem → mantém agenda_goals
+  → keep_goals=0 → UPSERT agenda_goals com novos valores
+  → keep_goals=1 + sem metas → ?warn=no_goals (banner âmbar, keepGoals desmarcado)
+  → createSession + backfill
+```
+
+---
+
+## Dashboard — Seções
+
+| Seção | Descrição |
+|---|---|
+| Header | Nome do evento, datas, número do dia no ano |
+| Progresso | Barras de distância e tempo em relação à meta |
+| Heatmap | Calendário de atividade por dia |
+| Totais | Distância, tempo, elevação, dias ativos |
+| Recordes | Melhor dia de distância e tempo |
+| Últimas atividades | Lista das atividades recentes |
+
+**Botões no header:**
+- ↺ Sincronizar — dispara `POST /api/agenda/sync` (backfill manual)
+- 🔔 Notificações — ativa/desativa push para o device atual
+
+**Footer:** "sair deste dispositivo" → `POST /api/auth/strava/logout`
+
+---
+
 ## Dependências de Banco
 
 ### Leitura (dispatcher)
 - `agenda_daily` — dados consolidados por dia
-- `agenda_goals` — metas do atleta no evento (via LEFT JOIN)
+- `agenda_goals` — metas do atleta no evento (LEFT JOIN)
 
-### Escrita (backfill)
+### Escrita (backfill / sync)
 - `activities` — atividades brutas
 - `event_activities` — vínculo atividade↔evento
 - `agenda_daily` — consolidado diário (UPSERT idempotente)
 
 ---
 
-## Backfill
+## Backfill e Sync
 
-Disparado pelo callback OAuth somente para o módulo `agenda`.
-Processa histórico de atividades desde `event.start_date` sem fazer PUT no Strava.
-Idempotente — pode ser re-executado sem efeitos colaterais.
+**Backfill** — disparado automaticamente no callback OAuth.
+**Sync** — disparado manualmente pelo atleta no dashboard.
+
+Ambos processam histórico desde `event.start_date` via `GET /athlete/activities`,
+paginados (200/página, até 10 páginas, 1s delay).
+Não fazem PUT no Strava. Idempotentes.

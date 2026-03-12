@@ -25,6 +25,24 @@ Atletas autenticados via OAuth Strava.
 
 ---
 
+### `sessions`
+
+Sessões ativas por atleta/evento. O cookie de sessão carrega o `token` (UUID),
+nunca o `strava_id` diretamente.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `token` | text PK | UUID gerado no callback OAuth |
+| `strava_id` | bigint FK→athletes | |
+| `event_id` | int FK→events | |
+| `expires_at` | timestamptz | Igual ao `end_date` do evento |
+| `created_at` | timestamptz | |
+
+Um atleta pode ter múltiplas sessões simultâneas (múltiplos devices ou eventos).
+Sessões expiradas são ignoradas na validação mas não são removidas automaticamente.
+
+---
+
 ### `events`
 
 Eventos criados na plataforma.
@@ -41,7 +59,11 @@ Eventos criados na plataforma.
 | `owner_strava_id` | bigint FK→athletes | |
 | `module_id` | int FK→modules | |
 | `required_scopes` | text | Padrão: `activity:read` |
+| `push_heading` | text | Título da notificação push (opcional) |
+| `push_body` | text | Corpo da notificação push (opcional) |
 | `updated_at` | timestamptz | |
+
+Se `push_heading` ou `push_body` forem nulos, o dispatcher usa textos padrão.
 
 **Eventos registrados:**
 | id | slug | module_id | access_mode |
@@ -75,7 +97,7 @@ Módulos registrados na plataforma.
 
 ### `athlete_events`
 
-Vínculo atleta↔evento com role e status.
+Vínculo atleta↔evento com role, status e preferências por evento.
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
@@ -84,10 +106,34 @@ Vínculo atleta↔evento com role e status.
 | `role` | text | `provider`, `owner`, `admin`, `user` |
 | `status` | text | `active` (padrão) |
 | `permissions` | jsonb | `{}` padrão |
+| `push_consent` | boolean | Consentimento para notificações push neste evento |
 | `joined_at` | timestamptz | |
 | `created_at` | timestamptz | |
 
 PK: `(strava_id, event_id)`
+
+`push_consent` é por evento — o atleta pode ativar notificações em um evento
+e bloquear em outro. Atualizado a cada autenticação OAuth.
+
+---
+
+### `notification_devices`
+
+Devices registrados para notificações push via OneSignal.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `id` | bigserial PK | |
+| `strava_id` | bigint FK→athletes | |
+| `player_id` | text | ID do device no OneSignal |
+| `platform` | text | `web`, `ios`, `android` |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
+
+UNIQUE: `(strava_id, player_id)`
+
+Um atleta pode ter múltiplos devices registrados. O `player_id` é fornecido
+pelo SDK do OneSignal após o atleta aceitar o prompt nativo do browser.
 
 ---
 
@@ -116,15 +162,13 @@ Atividades brutas do Strava. Populada pelo webhook (mínimo) e completada pelo w
 | `updated_at` | timestamptz | |
 
 **Nota sobre `duplicate_of`:** atividades registradas em múltiplos devices simultaneamente
-são detectadas pelo worker e marcadas aqui. A atividade com maior `moving_time` é mantida
-como original. Duplicatas são ignoradas no processamento.
+são detectadas pelo worker. A atividade com maior `moving_time` é mantida como original.
 
 ---
 
 ### `event_activities`
 
-Vínculo atividade↔evento. Uma linha por combinação — a mesma atividade pode pertencer
-a múltiplos eventos.
+Vínculo atividade↔evento. Uma linha por combinação.
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
@@ -134,9 +178,6 @@ a múltiplos eventos.
 | `metadata` | jsonb | Estado por módulo: `{ "agenda": true }` |
 
 PK: `(event_id, strava_activity_id)`
-
-O campo `metadata` é atualizado pelo dispatcher conforme cada módulo processa a atividade.
-`processed` é marcado `true` quando todos os módulos do evento foram processados.
 
 ---
 
@@ -172,7 +213,7 @@ Log de auditoria de todos os webhooks recebidos.
 
 ### `agenda_daily`
 
-Consolidado diário por atleta/evento. Uma linha por `(event_id, strava_id, activity_date)`.
+Consolidado diário por atleta/evento.
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
@@ -181,7 +222,7 @@ Consolidado diário por atleta/evento. Uma linha por `(event_id, strava_id, acti
 | `strava_id` | bigint FK→athletes | |
 | `activity_date` | date | |
 | `total_distance_m` | integer | |
-| `total_elevation_gain_m` | integer | |
+| `total_elevation_gain_m` | integer | Metros |
 | `total_moving_time_sec` | integer | |
 | `total_elapsed_time_sec` | integer | |
 | `treino_distance_m` | integer | Atividades não-commute |
@@ -225,22 +266,11 @@ Configurações do evento (visuais + parâmetros por módulo).
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
 
-**Exemplo de metadata para o módulo Estimator:**
-```json
-{
-  "mass_kg": 85,
-  "default_ftp_w": 260,
-  "descent_kmh": 45,
-  "cda": 0.32,
-  "crr": 0.004
-}
-```
-
 ---
 
 ### `athlete_gears`
 
-Equipamentos (bikes, tênis) do atleta. Populado pelo worker via `GET /gear/:id`.
+Equipamentos do atleta. Populado pelo worker via `GET /gear/:id`.
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
@@ -250,14 +280,11 @@ Equipamentos (bikes, tênis) do atleta. Populado pelo worker via `GET /gear/:id`
 | `type` | text | `bike` ou `shoe` (inferido de `frame_type`) |
 | `created_at` | timestamptz | |
 
-**Inferência de tipo:** `frame_type` presente na resposta do Strava → `bike`; ausente → `shoe`.
-O worker só chama `GET /gear/:id` para gears ainda não registrados no banco.
-
 ---
 
 ### `event_module_processing`
 
-Rastreamento de processamento por módulo (granularidade fina para auditoria).
+Rastreamento de processamento por módulo.
 
 | Coluna | Tipo | Descrição |
 |---|---|---|
@@ -274,4 +301,4 @@ PK: `(event_id, strava_activity_id, module_id)`
 ## TO DO — Manutenção de Banco
 
 - Remoção física de atividades com `last_webhook_aspect = 'delete'`
-  (atualmente marcadas mas não removidas — decisão pendente de implementação)
+- Limpeza periódica de sessões expiradas em `sessions`
