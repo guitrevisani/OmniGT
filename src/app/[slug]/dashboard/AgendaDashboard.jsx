@@ -345,7 +345,7 @@ export default function AgendaDashboard({ slug }) {
 
         <SectionTitle>Este Ano</SectionTitle>
         <div style={S.grid3}>
-          <StatCard label="Distância" value={`${(m.yearKm/1000).toFixed(0)} km`} />
+          <StatCard label="Distância" value={`${(m.yearKm).toFixed(0)} km`} />
           <StatCard label="Tempo" value={fmtHr(m.yearSec)} />
           <StatCard label="Elevação" value={`${(m.yearElevation).toFixed(0)} m`} />
         </div>
