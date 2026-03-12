@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata = {
   title: "Provider Dashboard",
-  description: "Gerenciamento central da Strava Event Engine",
+  description: "Gerenciamento central da OGT Event Engine",
 };
 
 export default function ProviderLayout({ children }) {

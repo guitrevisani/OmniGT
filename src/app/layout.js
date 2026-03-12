@@ -16,7 +16,7 @@ export const metadata = {
     default: "OmniGT",
     template: "OGT - %s",
   },
-  description: "Strava Event Engine",
+  description: "OGT Event Engine",
 };
 
 export default function RootLayout({ children }) {
