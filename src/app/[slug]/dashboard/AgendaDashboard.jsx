@@ -192,18 +192,83 @@ function SectionTitle({children}) {
   );
 }
 
+// ─── Botão de sincronização manual ──────────────────────────────────────────
+
+function SyncButton({ slug, onSuccess }) {
+  const [status, setStatus] = useState("idle"); // idle | loading | ok | error
+
+  async function handleSync() {
+    setStatus("loading");
+    try {
+      const res = await fetch("/api/agenda/sync", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ slug }),
+      });
+      if (!res.ok) throw new Error("sync_failed");
+      setStatus("ok");
+      setTimeout(() => { setStatus("idle"); onSuccess(); }, 1500);
+    } catch {
+      setStatus("error");
+      setTimeout(() => setStatus("idle"), 2500);
+    }
+  }
+
+  const label = status === "loading" ? "sincronizando…"
+              : status === "ok"      ? "✓ atualizado"
+              : status === "error"   ? "erro — tente novamente"
+              : "↺ sincronizar";
+
+  const bg = status === "ok"    ? "rgba(74,222,128,0.15)"
+           : status === "error" ? "rgba(248,113,113,0.15)"
+           : "rgba(255,255,255,0.06)";
+
+  const borderColor = status === "ok"    ? "rgba(74,222,128,0.4)"
+                    : status === "error" ? "rgba(248,113,113,0.4)"
+                    : "rgba(255,255,255,0.12)";
+
+  const color = status === "ok"    ? "#4ade80"
+              : status === "error" ? "#f87171"
+              : "#888";
+
+  return (
+    <button
+      onClick={handleSync}
+      disabled={status === "loading"}
+      style={{
+        background:   bg,
+        border:       `1px solid ${borderColor}`,
+        borderRadius: 6,
+        color,
+        fontFamily:   "'DM Mono', monospace",
+        fontSize:     11,
+        letterSpacing:"0.08em",
+        padding:      "6px 12px",
+        cursor:       status === "loading" ? "default" : "pointer",
+        transition:   "all 0.2s ease",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+// ─── Main ────────────────────────────────────────────────────────────────────
+
 export default function AgendaDashboard({ slug }) {
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
 
-  useEffect(() => {
+  function loadData() {
+    setLoading(true);
     fetch(`/api/agenda/${slug}`)
       .then(r => { if (r.status===401) throw new Error("not_authenticated"); if (!r.ok) throw new Error("fetch_failed"); return r.json(); })
-      .then(setData)
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [slug]);
+      .then(d  => { setData(d); setLoading(false); })
+      .catch(e => { setError(e.message); setLoading(false); });
+  }
+
+  useEffect(() => { loadData(); }, [slug]);
 
   const metrics = useMemo(() => data ? computeMetrics(data.daily, data.goals, data.event.start_date) : null, [data]);
 
@@ -213,7 +278,7 @@ export default function AgendaDashboard({ slug }) {
 
   const { goals } = data;
   const m = metrics;
-  const goalPct = goals.distance_km>0 ? Math.min((m.totalDistanceM/1000/goals.distance_km)*100,100) : 0;
+  const goalPct   = goals.distance_km>0 ? Math.min((m.totalDistanceM/1000/goals.distance_km)*100,100) : 0;
   const maxBucket = Math.max(...Object.values(m.buckets),1);
 
   return (
@@ -227,10 +292,13 @@ export default function AgendaDashboard({ slug }) {
             <h1 style={{fontSize:28,fontFamily:"'Bebas Neue',sans-serif",color:"#f0f0f0",letterSpacing:"0.05em",lineHeight:1.1}}>{data.event.name}</h1>
             <div style={{fontSize:11,color:"#555",fontFamily:"'DM Mono',monospace",marginTop:2}}>{data.event.start_date} → {data.event.end_date} · dia {m.dayOfYear} do ano</div>
           </div>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontSize:11,color:"#555",fontFamily:"'DM Mono',monospace"}}>meta anual</div>
-            <div style={{fontSize:22,fontFamily:"'Bebas Neue',sans-serif",color:"#f0f0f0"}}>{goals.distance_km.toLocaleString("pt-BR")} km</div>
-            <div style={{fontSize:11,color:"#555",fontFamily:"'DM Mono',monospace"}}>{fmtHr(goals.moving_time_sec)} hrs</div>
+          <div style={{textAlign:"right",display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
+            <div>
+              <div style={{fontSize:11,color:"#555",fontFamily:"'DM Mono',monospace"}}>meta anual</div>
+              <div style={{fontSize:22,fontFamily:"'Bebas Neue',sans-serif",color:"#f0f0f0"}}>{goals.distance_km.toLocaleString("pt-BR")} km</div>
+              <div style={{fontSize:11,color:"#555",fontFamily:"'DM Mono',monospace"}}>{fmtHr(goals.moving_time_sec)} hrs</div>
+            </div>
+            <SyncButton slug={slug} onSuccess={loadData} />
           </div>
         </header>
 
