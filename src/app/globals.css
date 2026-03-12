@@ -1,42 +1,39 @@
+/* provider.css - cores e estilos base do dashboard PROVIDER */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --provider-bg: #0d1b2a;
+  --provider-fg: #e0e0e0;
+  --provider-accent: #1b9aaa;
+  --provider-accent-hover: #17a2b8;
+  --provider-header-height: 60px;
+  --provider-sidebar-width: 220px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --provider-bg: #0a121f;
+    --provider-fg: #f0f0f0;
+    --provider-accent: #1b9aaa;
+    --provider-accent-hover: #17a2b8;
   }
 }
 
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
-}
-
-body {
-  color: var(--foreground);
-  background: var(--background);
+/* Reset e global */
+body.provider-dashboard {
+  background: var(--provider-bg);
+  color: var(--provider-fg);
   font-family: Arial, Helvetica, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-* {
-  box-sizing: border-box;
-  padding: 0;
   margin: 0;
+  padding: 0;
 }
 
 a {
-  color: inherit;
+  color: var(--provider-accent);
   text-decoration: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
+a:hover {
+  color: var(--provider-accent-hover);
 }

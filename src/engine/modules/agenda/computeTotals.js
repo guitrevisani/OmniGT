@@ -1,0 +1,42 @@
+/**
+ * ============================================================
+ * AGENDA MODULE — computeTotals
+ * ============================================================
+ *
+ * Calcula os totais consolidados do período do evento.
+ * Os valores de meta (goal_*) são passados adiante para
+ * que buildDescription possa usá-los sem depender do context.
+ *
+ * Critério de dia ativo: total_moving_time_sec >= 900 (15min)
+ * ============================================================
+ */
+
+export function computeTotals({ daily }) {
+  let totalDistanceM    = 0;
+  let totalMovingTimeSec = 0;
+  let totalElevationM   = 0;
+  let activeDays        = 0;
+
+  for (const d of daily) {
+    totalDistanceM     += d.total_distance_m     || 0;
+    totalMovingTimeSec += d.total_moving_time_sec || 0;
+    totalElevationM    += d.total_elevation_gain_m || 0;
+
+    if ((d.total_moving_time_sec || 0) >= 900) {
+      activeDays++;
+    }
+  }
+
+  // Metas — vêm do JOIN com agenda_goals (primeira linha, todas iguais)
+  const goalDistanceKm    = daily[0]?.goal_distance_km    || 0;
+  const goalMovingTimeSec = daily[0]?.goal_moving_time_sec || 0;
+
+  return {
+    totalDistanceM,
+    totalMovingTimeSec,
+    totalElevationM,
+    activeDays,
+    goalDistanceKm,
+    goalMovingTimeSec,
+  };
+}

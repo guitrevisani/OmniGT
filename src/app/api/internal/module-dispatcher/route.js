@@ -1,0 +1,265 @@
+import { NextResponse } from "next/server";
+import { query } from "@/lib/db";
+import { getValidAccessToken } from "@/lib/strava";
+import { mergeDescription } from "@/engine/mergeDescription";
+
+// Módulos registrados
+import { ACCEPTED_SPORT_TYPES } from "@/engine/modules/agenda/index.js";
+import { computeTotals }        from "@/engine/modules/agenda/computeTotals.js";
+import { buildDescription }     from "@/engine/modules/agenda/buildDescription.js";
+
+export const runtime     = "nodejs";
+export const maxDuration = 60;
+
+const STRAVA_API = "https://www.strava.com/api/v3";
+
+/**
+ * ============================================================
+ * MODULE REGISTRY
+ * ============================================================
+ *
+ * Registra módulos ativos e seus contratos:
+ *   consolidate(context) → dados para os builders
+ *   build(data, context) → descriptionBlock string
+ *   acceptedSportTypes   → filtra antes de processar
+ *
+ * Para adicionar um novo módulo: adicionar entrada aqui.
+ * O dispatcher não precisa ser alterado.
+ * ============================================================
+ */
+const MODULE_REGISTRY = {
+  agenda: {
+    acceptedSportTypes: ACCEPTED_SPORT_TYPES,
+
+    // Consolida dados do banco para o módulo
+    async consolidate(context) {
+      const result = await query(
+        `SELECT
+           d.activity_date,
+           d.total_distance_m,
+           d.total_elevation_gain_m,
+           d.total_moving_time_sec,
+           d.total_elapsed_time_sec,
+           d.treino_distance_m,
+           d.desloc_distance_m,
+           d.treino_moving_time_sec,
+           d.desloc_moving_time_sec,
+           g.goal_distance_km,
+           g.goal_moving_time_sec
+         FROM agenda_daily d
+         LEFT JOIN agenda_goals g
+           ON g.event_id = d.event_id AND g.strava_id = d.strava_id
+         WHERE d.event_id    = $1
+           AND d.strava_id   = $2
+           AND d.activity_date >= $3
+           AND d.activity_date <= $4
+         ORDER BY d.activity_date`,
+        [context.eventId, context.stravaId, context.startDate, context.endDate]
+      );
+      return { daily: result.rows };
+    },
+
+    // Gera bloco de descrição
+    build(data, context) {
+      const totals = computeTotals(data);
+      return buildDescription({
+        totals,
+        context: {
+          event: {
+            name: context.eventName,
+            goals: {},
+          },
+        },
+      });
+    },
+  },
+};
+
+/**
+ * ============================================================
+ * POST /api/internal/module-dispatcher
+ * ============================================================
+ *
+ * Chamado pelo worker após coleta de dados brutos.
+ * Responsabilidades:
+ *   1. Buscar event_activities pendentes para a atividade
+ *   2. Para cada evento: identificar módulo, consolidar dados,
+ *      gerar descriptionBlock
+ *   3. mergeDescription → PUT Strava
+ *   4. Atualizar metadata em event_activities
+ *   5. Atualizar engine_last_put_at em activities
+ *
+ * Body: { strava_activity_id, strava_id }
+ * ============================================================
+ */
+export async function POST(request) {
+  const auth = request.headers.get("authorization") || "";
+  if (auth !== `Bearer ${process.env.INTERNAL_WORKER_SECRET}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { strava_activity_id: activityId, strava_id: stravaId } = await request.json();
+
+  if (!activityId || !stravaId) {
+    return NextResponse.json({ error: "strava_activity_id e strava_id são obrigatórios" }, { status: 400 });
+  }
+
+  try {
+    // ── Buscar activity + sport_type no banco ─────────────
+    // last_webhook_aspect = 'delete' → nada a processar
+    const actResult = await query(
+      `SELECT last_webhook_aspect FROM activities WHERE strava_activity_id = $1`,
+      [activityId]
+    );
+
+    if (actResult.rows.length === 0) {
+      return NextResponse.json({ ok: false, reason: "activity_not_found" });
+    }
+    if (actResult.rows[0].last_webhook_aspect === "delete") {
+      return NextResponse.json({ ok: true, reason: "delete_skipped" });
+    }
+
+    // ── Buscar sport_type no Strava ───────────────────────
+    // Necessário para filtrar por ACCEPTED_SPORT_TYPES.
+    // Token com refresh automático.
+    const token     = await getValidAccessToken(stravaId);
+    const stravaRes = await fetch(`${STRAVA_API}/activities/${activityId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!stravaRes.ok) {
+      return NextResponse.json({ ok: false, reason: `strava_fetch_${stravaRes.status}` });
+    }
+
+    const stravaActivity     = await stravaRes.json();
+    const originalDescription = stravaActivity.description || "";
+    const sportType           = stravaActivity.sport_type;
+
+    // ── event_activities pendentes para esta atividade ───
+    const pendingResult = await query(
+      `SELECT ea.event_id, ea.metadata,
+              e.name AS event_name, e.start_date, e.end_date,
+              m.slug AS module_slug
+       FROM event_activities ea
+       JOIN events  e ON e.id  = ea.event_id
+       JOIN modules m ON m.id  = e.module_id
+       WHERE ea.strava_activity_id = $1
+         AND ea.processed          = false
+         AND e.is_active           = true
+         AND m.is_active           = true`,
+      [activityId]
+    );
+
+    if (pendingResult.rows.length === 0) {
+      return NextResponse.json({ ok: true, processed: 0, reason: "nothing_pending" });
+    }
+
+    // ── Processar cada evento ─────────────────────────────
+    const moduleOutputs = [];
+    const processedEvents = [];
+
+    for (const row of pendingResult.rows) {
+      const reg = MODULE_REGISTRY[row.module_slug];
+
+      if (!reg) {
+        console.warn(`[Dispatcher] Módulo não registrado: ${row.module_slug}`);
+        continue;
+      }
+
+      // Filtrar sport_type
+      if (reg.acceptedSportTypes && !reg.acceptedSportTypes.includes(sportType)) {
+        // Marca como processado mesmo assim — não há o que fazer com esse sport
+        await markProcessed(row.event_id, activityId, row.module_slug);
+        continue;
+      }
+
+      const context = {
+        stravaId,
+        eventId:   row.event_id,
+        eventName: row.event_name,
+        startDate: row.start_date,
+        endDate:   row.end_date,
+      };
+
+      try {
+        const data  = await reg.consolidate(context);
+        const block = reg.build(data, context);
+
+        if (block) {
+          moduleOutputs.push({ eventName: row.event_name, block });
+        }
+
+        await markProcessed(row.event_id, activityId, row.module_slug);
+        processedEvents.push(row.event_id);
+
+      } catch (err) {
+        console.error(`[Dispatcher] Erro módulo ${row.module_slug} event ${row.event_id}:`, err);
+      }
+    }
+
+    // ── mergeDescription + PUT Strava ─────────────────────
+    if (moduleOutputs.length > 0) {
+      const merged = mergeDescription(originalDescription, moduleOutputs);
+
+      if (merged !== null) {
+        const putRes = await fetch(`${STRAVA_API}/activities/${activityId}`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ description: merged }),
+        });
+
+        if (!putRes.ok) {
+          const body = await putRes.text();
+          console.error(`[Dispatcher] PUT ${activityId} falhou:`, putRes.status, body);
+          return NextResponse.json({ ok: false, reason: `strava_put_${putRes.status}` });
+        }
+
+        // Atualizar loop guard
+        await query(
+          `UPDATE activities SET engine_last_put_at = NOW()
+           WHERE strava_activity_id = $1`,
+          [activityId]
+        );
+      }
+    }
+
+    // Marcar event_activities.processed = true se todos os módulos ok
+    if (processedEvents.length > 0) {
+      for (const eventId of processedEvents) {
+        await query(
+          `UPDATE event_activities SET processed = true
+           WHERE event_id = $1 AND strava_activity_id = $2`,
+          [eventId, activityId]
+        );
+      }
+    }
+
+    return NextResponse.json({
+      ok:        true,
+      processed: processedEvents.length,
+      outputs:   moduleOutputs.length,
+    });
+
+  } catch (err) {
+    console.error("[Dispatcher] Erro geral:", err);
+    return NextResponse.json({ error: "Dispatcher failed", detail: err.message }, { status: 500 });
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Marca módulo como processado no metadata de event_activities.
+ * { agenda: true } — extensível para múltiplos módulos por evento.
+ */
+async function markProcessed(eventId, activityId, moduleSlug) {
+  await query(
+    `UPDATE event_activities
+     SET metadata = COALESCE(metadata, '{}') || $1::jsonb
+     WHERE event_id = $2 AND strava_activity_id = $3`,
+    [JSON.stringify({ [moduleSlug]: true }), eventId, activityId]
+  );
+}

@@ -1,0 +1,135 @@
+/* /provider/provider.module.css */
+.providerRoot {
+  font-family: var(--font-geist-sans), sans-serif;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+/* Header full width */
+.providerRoot .header {
+  padding: 1rem 2rem;
+  background-color: #0d1b2a;
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 600;
+  border-bottom: 1px solid #1b263b;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  z-index: 10;
+}
+
+/* Container flex para sidebar + main */
+.providerRoot .contentWrapper {
+  display: flex;
+  flex: 1;
+  min-height: 0; /* permite scroll no main */
+}
+
+/* Sidebar */
+.providerRoot .sidebar {
+  width: 220px;
+  background-color: #1b263b;
+  color: #fff;
+  padding: 1rem;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.providerRoot .sidebar nav ul {
+  list-style: none;
+  padding: 0;
+}
+
+.providerRoot .sidebar nav ul li {
+  padding: 0.75rem 0;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.providerRoot .sidebar nav ul li:hover {
+  color: #f0a500;
+}
+
+/* Main content */
+.providerRoot .main {
+  flex: 1;
+  padding: 2rem;
+  overflow-y: auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* centraliza formulário e títulos */
+}
+
+/* Formulários */
+.providerRoot input,
+.providerRoot select,
+.providerRoot textarea,
+.providerRoot button {
+  font-family: var(--font-geist-sans), sans-serif;
+  font-size: 0.95rem;
+  padding: 0.5rem 0.75rem;
+  margin: 0.25rem 0;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.providerRoot button {
+  background-color: #0d1b2a;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.providerRoot button:hover {
+  background-color: #1b263b;
+}
+
+/* Limitar largura do formulário e centralizar no main */
+.providerRoot .main form {
+  max-width: 400px; /* largura máxima no desktop */
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;        /* espaçamento entre campos */
+}
+
+/* Títulos de seção alinhados com formulário */
+.providerRoot .main h2 {
+  max-width: 400px;
+  width: 100%;
+  margin: 1rem auto 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  text-align: left; /* mantém alinhamento dentro do bloco */
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+  .providerRoot .contentWrapper {
+    flex-direction: column;
+  }
+
+  .providerRoot .sidebar {
+    width: 100%;
+  }
+
+  .providerRoot .main {
+    margin-left: 0;
+    padding: 1rem;
+  }
+
+  /* Formulário ocupa toda a largura no mobile */
+  .providerRoot .main form,
+  .providerRoot .main h2 {
+    max-width: 100%;
+  }
+}
