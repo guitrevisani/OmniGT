@@ -63,7 +63,8 @@ export async function POST(request) {
     await query(
       `INSERT INTO strava_events
          (object_type, aspect_type, object_id, owner_id, payload, created_at)
-       VALUES ($1,$2,$3,$4,$5,NOW())`,
+       VALUES ($1,$2,$3,$4,$5,NOW())
+       ON CONFLICT DO NOTHING`,
       [object_type, aspect_type, activityId, stravaId, JSON.stringify(payload)]
     );
 
@@ -74,8 +75,8 @@ export async function POST(request) {
     await query(
       `INSERT INTO activities
          (strava_activity_id, strava_id,
-          last_webhook_aspect, last_webhook_at, last_strava_update_at)
-       VALUES ($1,$2,$3,NOW(),to_timestamp($4))
+          start_date, last_webhook_aspect, last_webhook_at, last_strava_update_at)
+       VALUES ($1,$2,NOW(),$3,NOW(),to_timestamp($4))
        ON CONFLICT (strava_activity_id) DO UPDATE SET
          last_webhook_aspect   = EXCLUDED.last_webhook_aspect,
          last_webhook_at       = NOW(),
