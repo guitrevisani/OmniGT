@@ -287,16 +287,41 @@ export async function POST(request) {
 
         const stravaActivity = await stravaRes.json();
 
+        // ── Persistir dados completos no banco ─────────────
+        await query(
+          `UPDATE activities SET
+             start_date              = $2,
+             distance_m              = $3,
+             moving_time             = $4,
+             elapsed_time            = $5,
+             total_elevation_gain    = $6,
+             commute                 = $7,
+             gear_id                 = $8,
+             device_name             = $9,
+             average_watts           = $10,
+             weighted_average_watts  = $11,
+             device_watts            = $12,
+             updated_at              = NOW()
+           WHERE strava_activity_id = $1`,
+          [
+            activityId,
+            stravaActivity.start_date,
+            stravaActivity.distance,
+            stravaActivity.moving_time,
+            stravaActivity.elapsed_time,
+            stravaActivity.total_elevation_gain,
+            stravaActivity.commute,
+            stravaActivity.gear_id || null,
+            stravaActivity.device_name || null,
+            stravaActivity.average_watts       ?? null,
+            stravaActivity.weighted_average_watts ?? null,
+            stravaActivity.device_watts        ?? null,
+          ]
+        );
+
         // ── Upsert gear ─────────────────────────────────────
         if (stravaActivity.gear_id) {
           await upsertGear(stravaActivity.gear_id, stravaId, token);
-          // Atualizar gear_id na activity se mudou
-          if (stravaActivity.gear_id !== act.gear_id) {
-            await query(
-              `UPDATE activities SET gear_id = $1 WHERE strava_activity_id = $2`,
-              [stravaActivity.gear_id, activityId]
-            );
-          }
         }
 
         // ── Detecção de duplicata ───────────────────────────
