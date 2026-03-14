@@ -113,7 +113,7 @@ export async function GET(request) {
        VALUES ($1,$2,$3,'active',$4)
        ON CONFLICT (strava_id, event_id) DO UPDATE SET
          status       = 'active',
-         push_consent = EXCLUDED.push_consent,
+         push_consent = CASE WHEN EXCLUDED.push_consent = true THEN true ELSE athlete_events.push_consent END,
          role         = CASE
            WHEN athlete_events.role IN ('provider','owner','admin') THEN athlete_events.role
            ELSE EXCLUDED.role

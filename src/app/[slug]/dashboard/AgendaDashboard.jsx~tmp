@@ -341,7 +341,7 @@ export default function AgendaDashboard({ slug }) {
 
   useEffect(() => { loadData(); }, [slug]);
 
-// ── Aplicar tags do evento + verificar status de push ──
+  // ── Aplicar tags do evento + verificar status de push ──
   // O SDK já foi inicializado globalmente pelo OneSignalInit.
   // Se push_consent=true no banco e o device ainda não tem opt-in,
   // dispara o prompt nativo automaticamente.
@@ -355,16 +355,8 @@ export default function AgendaDashboard({ slug }) {
       setPushStatus(isSubscribed ? "subscribed" : "idle");
 
       if (isSubscribed) {
-        // Device já inscrito — garantir tags e registro no banco atualizados
-        const playerId = OneSignal.User.PushSubscription.id;
+        // Device já inscrito — garantir tags atualizadas
         OneSignal.User.addTags({ [`event_${slug}`]: "true" });
-        if (playerId) {
-          fetch("/api/push/register", {
-            method:  "POST",
-            headers: { "Content-Type": "application/json" },
-            body:    JSON.stringify({ player_id: playerId, platform: "web" }),
-          }).catch(err => console.error("[Push] Erro ao registrar device:", err));
-        }
       } else if (pushConsentSaved) {
         // Atleta consentiu no registro mas este device ainda não tem opt-in
         // Dispara o prompt nativo automaticamente
