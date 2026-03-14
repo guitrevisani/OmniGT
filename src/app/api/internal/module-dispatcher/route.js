@@ -19,6 +19,7 @@ const STRAVA_API = "https://www.strava.com/api/v3";
  * ============================================================
  *
  * Registra módulos ativos e seus contratos:
+ *   prepare(context)     → atualiza dados derivados antes do consolidate
  *   consolidate(context) → dados para os builders
  *   build(data, context) → descriptionBlock string
  *   acceptedSportTypes   → filtra antes de processar
@@ -31,7 +32,52 @@ const MODULE_REGISTRY = {
   agenda: {
     acceptedSportTypes: ACCEPTED_SPORT_TYPES,
 
-    // Consolida dados do banco para o módulo
+    /**
+     * Recalcula agenda_daily para o dia da atividade.
+     * Garante que a consolidação reflita dados atualizados
+     * mesmo para atividades recebidas via webhook (não backfill).
+     */
+    async prepare(context) {
+      await query(
+        `INSERT INTO agenda_daily (
+           event_id, strava_id, activity_date,
+           total_distance_m, total_elevation_gain_m,
+           total_moving_time_sec, total_elapsed_time_sec,
+           treino_distance_m, desloc_distance_m,
+           treino_moving_time_sec, desloc_moving_time_sec
+         )
+         SELECT
+           $1, $2, $3::date,
+           COALESCE(SUM(distance_m), 0)::integer,
+           COALESCE(SUM(total_elevation_gain), 0)::integer,
+           COALESCE(SUM(moving_time), 0)::integer,
+           COALESCE(SUM(elapsed_time), 0)::integer,
+           COALESCE(SUM(CASE WHEN commute = false THEN distance_m  ELSE 0 END), 0)::integer,
+           COALESCE(SUM(CASE WHEN commute = true  THEN distance_m  ELSE 0 END), 0)::integer,
+           COALESCE(SUM(CASE WHEN commute = false THEN moving_time ELSE 0 END), 0)::integer,
+           COALESCE(SUM(CASE WHEN commute = true  THEN moving_time ELSE 0 END), 0)::integer
+         FROM activities
+         WHERE strava_id  = $2
+           AND start_date::date = $3::date
+           AND duplicate_of IS NULL
+         ON CONFLICT (event_id, strava_id, activity_date) DO UPDATE SET
+           total_distance_m       = EXCLUDED.total_distance_m,
+           total_elevation_gain_m = EXCLUDED.total_elevation_gain_m,
+           total_moving_time_sec  = EXCLUDED.total_moving_time_sec,
+           total_elapsed_time_sec = EXCLUDED.total_elapsed_time_sec,
+           treino_distance_m      = EXCLUDED.treino_distance_m,
+           desloc_distance_m      = EXCLUDED.desloc_distance_m,
+           treino_moving_time_sec = EXCLUDED.treino_moving_time_sec,
+           desloc_moving_time_sec = EXCLUDED.desloc_moving_time_sec`,
+        [context.eventId, context.stravaId, context.activityDate]
+      );
+    },
+
+    /**
+     * Consolida dados do banco para o módulo.
+     * endDate = activityDate → acumulado até o dia da atividade,
+     * não até o fim do evento.
+     */
     async consolidate(context) {
       const result = await query(
         `SELECT
@@ -49,12 +95,12 @@ const MODULE_REGISTRY = {
          FROM agenda_daily d
          LEFT JOIN agenda_goals g
            ON g.event_id = d.event_id AND g.strava_id = d.strava_id
-         WHERE d.event_id    = $1
-           AND d.strava_id   = $2
+         WHERE d.event_id      = $1
+           AND d.strava_id     = $2
            AND d.activity_date >= $3
            AND d.activity_date <= $4
          ORDER BY d.activity_date`,
-        [context.eventId, context.stravaId, context.startDate, context.endDate]
+        [context.eventId, context.stravaId, context.startDate, context.activityDate]
       );
       return { daily: result.rows };
     },
@@ -66,7 +112,7 @@ const MODULE_REGISTRY = {
         totals,
         context: {
           event: {
-            name: context.eventName,
+            name:  context.eventName,
             goals: {},
           },
         },
@@ -83,8 +129,10 @@ const MODULE_REGISTRY = {
  * Chamado pelo worker após coleta de dados brutos.
  * Responsabilidades:
  *   1. Buscar event_activities pendentes para a atividade
- *   2. Para cada evento: identificar módulo, consolidar dados,
- *      gerar descriptionBlock
+ *   2. Para cada evento:
+ *      a. prepare()     → atualiza agenda_daily para o dia da atividade
+ *      b. consolidate() → lê dados acumulados até o dia da atividade
+ *      c. build()       → gera descriptionBlock
  *   3. mergeDescription → PUT Strava
  *   4. Atualizar metadata em event_activities
  *   5. Atualizar engine_last_put_at em activities
@@ -105,10 +153,11 @@ export async function POST(request) {
   }
 
   try {
-    // ── Buscar activity + sport_type no banco ─────────────
+    // ── Buscar activity no banco ──────────────────────────
     // last_webhook_aspect = 'delete' → nada a processar
     const actResult = await query(
-      `SELECT last_webhook_aspect FROM activities WHERE strava_activity_id = $1`,
+      `SELECT last_webhook_aspect, start_date::date AS activity_date
+       FROM activities WHERE strava_activity_id = $1`,
       [activityId]
     );
 
@@ -118,6 +167,8 @@ export async function POST(request) {
     if (actResult.rows[0].last_webhook_aspect === "delete") {
       return NextResponse.json({ ok: true, reason: "delete_skipped" });
     }
+
+    const activityDate = actResult.rows[0].activity_date; // 'YYYY-MM-DD'
 
     // ── Buscar sport_type no Strava ───────────────────────
     // Necessário para filtrar por ACCEPTED_SPORT_TYPES.
@@ -131,7 +182,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: false, reason: `strava_fetch_${stravaRes.status}` });
     }
 
-    const stravaActivity     = await stravaRes.json();
+    const stravaActivity      = await stravaRes.json();
     const originalDescription = stravaActivity.description || "";
     const sportType           = stravaActivity.sport_type;
 
@@ -155,7 +206,7 @@ export async function POST(request) {
     }
 
     // ── Processar cada evento ─────────────────────────────
-    const moduleOutputs = [];
+    const moduleOutputs   = [];
     const processedEvents = [];
 
     for (const row of pendingResult.rows) {
@@ -175,14 +226,23 @@ export async function POST(request) {
 
       const context = {
         stravaId,
-        eventId:   row.event_id,
-        eventName: row.event_name,
-        startDate: row.start_date,
-        endDate:   row.end_date,
+        eventId:      row.event_id,
+        eventName:    row.event_name,
+        startDate:    row.start_date,
+        endDate:      row.end_date,
+        activityDate,           // data da atividade — usado como teto do consolidate
       };
 
       try {
+        // a. Atualiza agenda_daily para o dia da atividade
+        if (reg.prepare) {
+          await reg.prepare(context);
+        }
+
+        // b. Consolida dados acumulados até o dia da atividade
         const data  = await reg.consolidate(context);
+
+        // c. Gera bloco de descrição
         const block = reg.build(data, context);
 
         if (block) {
@@ -205,7 +265,7 @@ export async function POST(request) {
         const putRes = await fetch(`${STRAVA_API}/activities/${activityId}`, {
           method: "PUT",
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization:  `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ description: merged }),
@@ -225,14 +285,13 @@ export async function POST(request) {
         );
 
         // ── Notificação push ──────────────────────────────
-        // Dispara para todos os atletas do evento com opt-in ativo
         for (const eventId of processedEvents) {
           sendPushNotification(eventId, pendingResult.rows.find(r => r.event_id === eventId)?.event_name || "");
         }
       }
     }
 
-    // Marcar event_activities.processed = true se todos os módulos ok
+    // Marcar event_activities.processed = true
     if (processedEvents.length > 0) {
       for (const eventId of processedEvents) {
         await query(
@@ -280,7 +339,6 @@ function sendPushNotification(eventId, eventName) {
   const apiKey = process.env.ONESIGNAL_API_KEY;
   if (!appId || !apiKey) return;
 
-  // Buscar slug do evento para filtrar por tag
   query(`SELECT slug FROM events WHERE id = $1`, [eventId])
     .then(result => {
       if (result.rows.length === 0) return;
