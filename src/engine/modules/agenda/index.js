@@ -49,7 +49,7 @@ export const REPROCESS_ON_DELETE = true;
  * Consolidação dos dados do período do evento para o atleta.
  * Busca agenda_daily + agenda_goals em uma única query com LEFT JOIN.
  */
-async function consolidate(context) {
+export async function consolidate(context) {
   const result = await context.db.query(
     `SELECT
        d.activity_date,

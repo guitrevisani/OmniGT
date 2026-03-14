@@ -49,29 +49,39 @@ Strava
 │  SELECT queue WHERE next_run_at <= now LIMIT 20
 │
 ├─ aspect_type = 'delete'?
-│   └─ marca last_webhook_aspect, remove da queue
+│   ├─ Para cada evento ativo do atleta com REPROCESS_ON_DELETE = true:
+│   │    reenfileira atividades posteriores à start_date da atividade deletada
+│   ├─ DELETE event_module_processing
+│   ├─ DELETE event_activities
+│   └─ DELETE activities
 │
 └─ CREATE/UPDATE:
     │  GET /activities/:id  ← Strava API (dados brutos frescos)
-    │  UPSERT activities (campos completos)
-    │  UPSERT athlete_gears (se gear_id presente)
+    │  UPDATE activities (campos completos: distância, tempo, elevação, gear, watts…)
+    │  UPSERT athlete_gears (se gear_id presente — só chama API se gear não existe)
     │  Detecta duplicata por device_name + start_date + moving_time
     │    → duplicata: marca duplicate_of, remove da queue, pula
-    │  UPSERT event_activities (processed=false) para cada evento ativo
+    │  Para cada evento ativo do atleta:
+    │    Filtra sport_type por ACCEPTED_SPORT_TYPES do módulo
+    │    INSERT event_activities (processed=false)
+    │      ON CONFLICT DO UPDATE SET processed = false
     │  Remove da queue
     │  Dispara dispatcher (fire-and-forget)
 ▼
 /api/internal/module-dispatcher  (PROCESSADOR)
 │
 │  SELECT event_activities WHERE processed = false
+│    JOIN events + modules
 │
-│  Para cada evento:
+│  GET /activities/:id  ← Strava API (para sport_type e description original)
+│
+│  Para cada evento pendente:
 │    Filtra sport_type por ACCEPTED_SPORT_TYPES do módulo
-│    consolidate(context) → busca dados do banco
-│    build(data, context) → gera descriptionBlock
+│    consolidate(context) → busca dados do banco (agenda_daily + agenda_goals)
+│    build(data, context) → computeTotals() + buildDescription() → string block
 │    Atualiza metadata: { module_slug: true }
 │
-│  mergeDescription(originalDescription, outputs[])
+│  mergeDescription(originalDescription, blocks[])
 │    → null se nenhum bloco gerado (sem PUT)
 │
 │  PUT /activities/:id  ← Strava API
@@ -84,6 +94,34 @@ Strava
 │      → filtra por tag event_<slug> no OneSignal
 │      → POST /api/v1/notifications (fire-and-forget)
 ```
+
+---
+
+## Contrato do module-dispatcher
+
+O dispatcher mantém seu próprio `MODULE_REGISTRY` com dois métodos por módulo:
+
+```js
+{
+  agenda: {
+    acceptedSportTypes: [...],
+
+    // Busca dados consolidados do banco para o módulo
+    async consolidate(context) {
+      // context: { stravaId, eventId, eventName, startDate, endDate }
+      // retorna: { daily: [...] }
+    },
+
+    // Gera o bloco de texto para a descrição da atividade
+    build(data, context) {
+      // data: retorno de consolidate()
+      // retorna: string (bloco de descrição)
+    },
+  }
+}
+```
+
+`mergeDescription` recebe `string[]` — cada elemento é o retorno de `build()`.
 
 ---
 
@@ -109,6 +147,8 @@ Disparada pelo dispatcher após cada PUT bem-sucedido no Strava, para cada event
 | `moving_time` | ±10% |
 
 A atividade com **maior `moving_time`** é mantida como original.
+Se a atividade atual tiver maior `moving_time`, a candidata é marcada como duplicata no banco
+e o processamento da atividade atual continua normalmente.
 
 ---
 
@@ -116,12 +156,13 @@ A atividade com **maior `moving_time`** é mantida como original.
 
 Quando `aspect_type = "delete"`:
 
-1. Worker marca `last_webhook_aspect = 'delete'`
-2. Remove da fila — sem processamento de módulos
-3. Remoção física: **TO DO** (job de manutenção)
+1. Worker busca eventos ativos do atleta
+2. Para módulos com `REPROCESS_ON_DELETE = true` (ex: `agenda`): reenfileira todas as
+   atividades do atleta naquele evento com `start_date >= start_date da atividade deletada`
+3. Remove `event_module_processing`, `event_activities` e `activities` em cascata
+4. Remove da queue
 
-**REPROCESS_ON_DELETE** (configurado por módulo em `index.js`):
-- Módulo `agenda`: `REPROCESS_ON_DELETE = true` — reprocessamento após delete **não implementado** ainda.
+O reprocessamento garante que os totais do módulo sejam recalculados após a remoção.
 
 ---
 

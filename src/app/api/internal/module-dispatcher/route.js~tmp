@@ -186,7 +186,7 @@ export async function POST(request) {
         const block = reg.build(data, context);
 
         if (block) {
-          moduleOutputs.push(block);
+          moduleOutputs.push({ eventName: row.event_name, block });
         }
 
         await markProcessed(row.event_id, activityId, row.module_slug);

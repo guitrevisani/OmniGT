@@ -17,7 +17,7 @@ export function computeTotals({ daily }) {
   let totalElevationM   = 0;
   let activeDays        = 0;
 
-  for (const d of (daily ?? [])) {
+  for (const d of daily) {
     totalDistanceM     += d.total_distance_m     || 0;
     totalMovingTimeSec += d.total_moving_time_sec || 0;
     totalElevationM    += d.total_elevation_gain_m || 0;

@@ -67,7 +67,7 @@ src/
       push/
         register/route.js          ← POST registra player_id + aplica tags OneSignal
       internal/
-        strava-worker/route.js     ← COLETOR de dados brutos
+        strava-worker/route.js     ← COLETOR de dados brutos (não conhece módulos)
         module-dispatcher/route.js ← PROCESSADOR por módulo + disparo de push
         validate-access/route.js
         role/route.js
@@ -79,12 +79,12 @@ src/
   engine/
     modules/
       agenda/
-        index.js
+        index.js                   ← ACCEPTED_SPORT_TYPES, REPROCESS_ON_DELETE, consolidate
         buildDescription.js
         computeDashboard.js
         computeTotals.js
-    moduleRunner.js
-    mergeDescription.js
+    moduleRunner.js                ← executor genérico (usado pelo dashboard, não pelo worker)
+    mergeDescription.js            ← agrega blocos de módulos na descrição da atividade
   lib/
     db.js                          ← pool PostgreSQL
     strava.js                      ← getValidAccessToken (com refresh automático)
@@ -144,17 +144,33 @@ Strava
 ▼
 /api/internal/strava-worker  (COLETOR)
 │  GET /activities/:id (Strava API)
-│  UPSERT activities + athlete_gears
+│  UPDATE activities (campos completos)
+│  UPSERT athlete_gears
 │  Detecta duplicata
-│  UPSERT event_activities (processed=false)
+│  INSERT event_activities (processed=false) por evento ativo
+│  Remove da queue
 │  Dispara dispatcher (fire-and-forget)
 ▼
 /api/internal/module-dispatcher  (PROCESSADOR)
-│  consolidate() → build() → mergeDescription()
+│  SELECT event_activities WHERE processed = false
+│  Para cada evento: consolidate() → build() → string block
+│  mergeDescription(originalDescription, blocks[])
 │  PUT /activities/:id (Strava API)
 │  engine_last_put_at + processed=true
 │  sendPushNotification() (fire-and-forget)
 ```
+
+### Separação de responsabilidades worker/dispatcher
+
+O `strava-worker` é intencionalmente ignorante de módulos. Ele sabe apenas:
+- Quais `sport_types` cada módulo aceita (`ACCEPTED_SPORT_TYPES`) — para filtrar antes de criar `event_activities`
+- Se o módulo reprocessa no DELETE (`REPROCESS_ON_DELETE`) — para reenfileirar atividades anteriores
+
+Toda a lógica de consolidação de dados e geração de descrição pertence exclusivamente
+ao `module-dispatcher`, que mantém seu próprio `MODULE_REGISTRY` com `consolidate` e `build` por módulo.
+
+O `moduleRunner.js` e os builders do `engine/` são usados pelo dashboard (server components),
+não pelo pipeline de webhook.
 
 ---
 
@@ -195,6 +211,9 @@ Redirect → /[slug]
 
 Para adicionar um módulo ao dispatcher: adicionar entrada em `MODULE_REGISTRY`
 em `src/app/api/internal/module-dispatcher/route.js`.
+
+O worker só precisa de `ACCEPTED_SPORT_TYPES` e `REPROCESS_ON_DELETE` — exportados
+pelo `index.js` de cada módulo.
 
 ---
 

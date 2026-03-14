@@ -139,7 +139,6 @@ async function removeFromQueue(activityId) {
  *   DELETE        → cascata REPROCESS_ON_DELETE → remove do banco
  */
 export async function POST(request) {
-  console.log("[Worker] versão nova — sem builders");
   const auth = request.headers.get("authorization") || "";
   if (auth !== `Bearer ${process.env.INTERNAL_WORKER_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
