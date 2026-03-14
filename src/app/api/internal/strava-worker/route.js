@@ -153,7 +153,7 @@ export async function POST(request) {
       `SELECT strava_activity_id FROM activity_processing_queue
        WHERE next_run_at <= NOW()
        ORDER BY next_run_at ASC
-       LIMIT 20`
+       LIMIT 50`
     );
 
     if (queueResult.rows.length === 0) {
