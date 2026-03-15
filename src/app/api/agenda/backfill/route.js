@@ -103,9 +103,11 @@ export async function POST(request) {
 
       // ── 4. UPSERT de cada atividade ─────────────────────────
       for (const act of activities) {
-        const actDate = act.start_date
-          ? act.start_date.slice(0, 10)
-          : null;
+        const actDate = act.start_date_local
+          ? act.start_date_local.slice(0, 10)
+          : act.start_date
+            ? act.start_date.slice(0, 10)
+            : null;
 
         if (!actDate) continue;
 
@@ -116,14 +118,15 @@ export async function POST(request) {
         await query(
           `INSERT INTO activities (
              strava_activity_id, strava_id,
-             start_date, distance_m,
+             start_date, start_date_local, distance_m,
              moving_time, elapsed_time,
              total_elevation_gain, commute,
              gear_id, updated_at
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
            ON CONFLICT (strava_activity_id) DO UPDATE SET
              distance_m           = EXCLUDED.distance_m,
+             start_date_local     = EXCLUDED.start_date_local,
              moving_time          = EXCLUDED.moving_time,
              elapsed_time         = EXCLUDED.elapsed_time,
              total_elevation_gain = EXCLUDED.total_elevation_gain,
@@ -134,6 +137,7 @@ export async function POST(request) {
             act.id,
             strava_id,
             act.start_date,
+            act.start_date_local || null,
             act.distance             || 0,
             act.moving_time          || 0,
             act.elapsed_time         || 0,
@@ -187,7 +191,7 @@ export async function POST(request) {
            COALESCE(SUM(CASE WHEN commute = true  THEN moving_time ELSE 0 END), 0)::integer
          FROM activities
          WHERE strava_id = $2
-           AND start_date::date = $3::date
+           AND COALESCE(start_date_local, start_date)::date = $3::date
          ON CONFLICT (event_id, strava_id, activity_date) DO UPDATE SET
            total_distance_m       = EXCLUDED.total_distance_m,
            total_elevation_gain_m = EXCLUDED.total_elevation_gain_m,

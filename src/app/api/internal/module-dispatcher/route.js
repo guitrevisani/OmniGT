@@ -316,6 +316,50 @@ export async function POST(request) {
           [activityId]
         );
 
+        // ── Upsert agenda_daily ───────────────────────────
+        // start_date_local vem do Strava com o offset do local
+        // da atividade — garante atribuição correta do dia.
+        const activityDate = (stravaActivity.start_date_local || stravaActivity.start_date).slice(0, 10);
+
+        for (const eventId of processedEvents) {
+          await query(
+            `INSERT INTO agenda_daily (
+               event_id, strava_id, activity_date,
+               total_distance_m, total_elevation_gain_m,
+               total_moving_time_sec, total_elapsed_time_sec,
+               treino_distance_m, desloc_distance_m,
+               treino_moving_time_sec, desloc_moving_time_sec
+             )
+             SELECT
+               $1, $2, $3::date,
+               COALESCE(SUM(distance_m), 0)::integer,
+               COALESCE(SUM(total_elevation_gain), 0)::integer,
+               COALESCE(SUM(moving_time), 0)::integer,
+               COALESCE(SUM(elapsed_time), 0)::integer,
+               COALESCE(SUM(CASE WHEN commute = false THEN distance_m  ELSE 0 END), 0)::integer,
+               COALESCE(SUM(CASE WHEN commute = true  THEN distance_m  ELSE 0 END), 0)::integer,
+               COALESCE(SUM(CASE WHEN commute = false THEN moving_time ELSE 0 END), 0)::integer,
+               COALESCE(SUM(CASE WHEN commute = true  THEN moving_time ELSE 0 END), 0)::integer
+             FROM activities a
+             JOIN event_activities ea
+               ON ea.strava_activity_id = a.strava_activity_id
+              AND ea.event_id = $1
+             WHERE a.strava_id = $2
+               AND a.duplicate_of IS NULL
+               AND COALESCE(a.start_date_local, a.start_date)::date = $3::date
+             ON CONFLICT (event_id, strava_id, activity_date) DO UPDATE SET
+               total_distance_m       = EXCLUDED.total_distance_m,
+               total_elevation_gain_m = EXCLUDED.total_elevation_gain_m,
+               total_moving_time_sec  = EXCLUDED.total_moving_time_sec,
+               total_elapsed_time_sec = EXCLUDED.total_elapsed_time_sec,
+               treino_distance_m      = EXCLUDED.treino_distance_m,
+               desloc_distance_m      = EXCLUDED.desloc_distance_m,
+               treino_moving_time_sec = EXCLUDED.treino_moving_time_sec,
+               desloc_moving_time_sec = EXCLUDED.desloc_moving_time_sec`,
+            [eventId, stravaId, activityDate]
+          );
+        }
+
         for (const eventId of processedEvents) {
           sendPushNotification(
             eventId,

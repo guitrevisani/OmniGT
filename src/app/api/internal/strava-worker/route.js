@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { getValidAccessToken } from "@/lib/strava";
+import { runModule } from "@/engine/moduleRunner";
+import { mergeDescription } from "@/engine/mergeDescription";
 
 import { ACCEPTED_SPORT_TYPES as agendaAccepted, REPROCESS_ON_DELETE as agendaReprocess } from "@/engine/modules/agenda/index.js";
+import { consolidate as agendaConsolidate } from "@/engine/modules/agenda/index.js";
+import { computeTotals }      from "@/engine/modules/agenda/computeTotals.js";
+import { buildDescription }   from "@/engine/modules/agenda/buildDescription.js";
 
-export const runtime     = "nodejs";
+export const runtime    = "nodejs";
 export const maxDuration = 60;
 
 const STRAVA_API = "https://www.strava.com/api/v3";
@@ -12,67 +17,91 @@ const STRAVA_API = "https://www.strava.com/api/v3";
 /**
  * MODULE_REGISTRY
  *
- * O worker só precisa saber:
- *   acceptedSportTypes  → para filtrar antes de criar event_activities
- *   reprocessOnDelete   → para reenfileirar atividades anteriores no DELETE
+ * Registra módulos ativos na engine.
+ * Cada entrada expõe:
+ *   module      → o index.js do módulo (ACCEPTED_SPORT_TYPES, REPROCESS_ON_DELETE, etc.)
+ *   consolidate → função que lê o banco e retorna dados para os builders
+ *   builders    → { buildDescription, computeTotals, ... }
  *
- * Toda a lógica de consolidação e geração de descrição pertence ao
- * module-dispatcher — o worker não chama builders nem consolidate.
+ * Módulos sem buildDescription (isRegistration: true) são ignorados no worker.
  */
 const MODULE_REGISTRY = {
   agenda: {
-    acceptedSportTypes: agendaAccepted,
-    reprocessOnDelete:  agendaReprocess,
+    acceptedSportTypes:  agendaAccepted,
+    reprocessOnDelete:   agendaReprocess,
+    isRegistration:      false,
+    consolidate: agendaConsolidate,
+    builders:    { buildDescription, computeTotals },
   },
+  // estimator: sem entrada — isRegistration: true, não gera bloco de descrição
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Detecta duplicata por heurística:
+ *   - mesmo strava_id
+ *   - start_date ±5min
+ *   - device_name diferente
+ *   - end_date ±5min  (start + elapsed_time)
+ *   - moving_time similar ±10%
+ *
+ * Retorna o strava_activity_id da atividade original (a de maior moving_time),
+ * ou null se não for duplicata.
+ */
 async function detectDuplicate(stravaId, startDate, elapsedTime, movingTime, deviceName, currentActivityId) {
   if (!deviceName) return null;
 
   const endDate   = new Date(new Date(startDate).getTime() + elapsedTime * 1000);
-  const tolerance = 5 * 60 * 1000;
+  const tolerance = 5 * 60 * 1000; // 5 min em ms
 
   const result = await query(
     `SELECT strava_activity_id, moving_time, elapsed_time, device_name
      FROM activities
-     WHERE strava_id              = $1
-       AND strava_activity_id    <> $2
+     WHERE strava_id       = $1
+       AND strava_activity_id <> $2
        AND duplicate_of IS NULL
        AND ABS(EXTRACT(EPOCH FROM (start_date - $3::timestamp)) * 1000) <= $4
        AND device_name IS NOT NULL
-       AND device_name           <> $5`,
+       AND device_name <> $5`,
     [stravaId, currentActivityId, startDate, tolerance, deviceName]
   );
 
   if (result.rows.length === 0) return null;
 
   for (const candidate of result.rows) {
+    // Verificar end_date ±5min
     const candEnd = new Date(
       new Date(candidate.start_date || startDate).getTime() +
       Number(candidate.elapsed_time) * 1000
     );
     if (Math.abs(candEnd - endDate) > tolerance) continue;
 
+    // Verificar moving_time ±10%
     const ratio = Math.max(movingTime, candidate.moving_time) /
                   Math.min(movingTime, candidate.moving_time);
     if (ratio > 1.1) continue;
 
+    // É duplicata — retorna o de maior moving_time como original
     if (candidate.moving_time >= movingTime) {
-      return candidate.strava_activity_id;
+      return candidate.strava_activity_id; // atual é duplicata do candidato
     } else {
+      // Candidato é duplicata do atual — marca o candidato
       await query(
         `UPDATE activities SET duplicate_of = $1 WHERE strava_activity_id = $2`,
         [currentActivityId, candidate.strava_activity_id]
       );
-      return null;
+      return null; // atual é o original
     }
   }
 
   return null;
 }
 
+/**
+ * Busca e registra gear em athlete_gears.
+ * Só chama a API do Strava se o gear ainda não existe no banco.
+ */
 async function upsertGear(gearId, stravaId, token) {
   if (!gearId) return;
 
@@ -89,6 +118,8 @@ async function upsertGear(gearId, stravaId, token) {
     if (!res.ok) return;
 
     const gear = await res.json();
+
+    // frame_type presente → bike; ausente → shoe
     const type = gear.frame_type != null ? "bike" : "shoe";
 
     await query(
@@ -102,6 +133,11 @@ async function upsertGear(gearId, stravaId, token) {
   }
 }
 
+/**
+ * Reenfileira atividades de um atleta num evento a partir de uma data.
+ * Usado no DELETE com REPROCESS_ON_DELETE = true.
+ * Sem delay — não é edição do atleta.
+ */
 async function reprocessFromDate(stravaId, eventId, fromDate) {
   await query(
     `INSERT INTO activity_processing_queue (strava_activity_id, next_run_at)
@@ -129,17 +165,14 @@ async function removeFromQueue(activityId) {
 /**
  * POST /api/internal/strava-worker
  *
- * Responsabilidade: COLETAR dados brutos do Strava e preparar event_activities.
- * NÃO processa módulos — delega ao module-dispatcher.
+ * Chamado pelo webhook (fire-and-forget) e/ou por cron.
+ * Processa todos os itens da queue com next_run_at <= now().
  *
- * Para cada activity_id na queue:
- *   CREATE/UPDATE → busca dados frescos no Strava → upsert activities
- *                 → detecta duplicata → popula event_activities
- *                 → dispara module-dispatcher (fire-and-forget)
- *   DELETE        → cascata REPROCESS_ON_DELETE → remove do banco
+ * Para cada activity_id:
+ *   CREATE/UPDATE → detecta duplicata → upsert gear → roda módulos → merge → PUT Strava
+ *   DELETE        → cascata se REPROCESS_ON_DELETE → remove do banco
  */
 export async function POST(request) {
-  console.log("[Worker] versão nova — sem builders");
   const auth = request.headers.get("authorization") || "";
   if (auth !== `Bearer ${process.env.INTERNAL_WORKER_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -153,7 +186,7 @@ export async function POST(request) {
       `SELECT strava_activity_id FROM activity_processing_queue
        WHERE next_run_at <= NOW()
        ORDER BY next_run_at ASC
-       LIMIT 50`
+       LIMIT 20`
     );
 
     if (queueResult.rows.length === 0) {
@@ -174,6 +207,7 @@ export async function POST(request) {
         );
 
         if (actResult.rows.length === 0) {
+          // Activity não existe ainda — mantém na queue, tenta depois
           skipped.push({ activityId, reason: "activity_not_in_db" });
           continue;
         }
@@ -183,6 +217,7 @@ export async function POST(request) {
 
         // ── DELETE ──────────────────────────────────────────
         if (act.last_webhook_aspect === "delete") {
+          // Buscar eventos ativos deste atleta antes de deletar
           const eventsResult = await query(
             `SELECT e.id AS event_id, m.slug AS module_slug
              FROM athlete_events ae
@@ -199,9 +234,19 @@ export async function POST(request) {
             }
           }
 
-          await query(`DELETE FROM event_module_processing WHERE strava_activity_id = $1`, [activityId]);
-          await query(`DELETE FROM event_activities WHERE strava_activity_id = $1`, [activityId]);
-          await query(`DELETE FROM activities WHERE strava_activity_id = $1`, [activityId]);
+          // Remover activity do banco
+          await query(
+            `DELETE FROM event_module_processing WHERE strava_activity_id = $1`,
+            [activityId]
+          );
+          await query(
+            `DELETE FROM event_activities WHERE strava_activity_id = $1`,
+            [activityId]
+          );
+          await query(
+            `DELETE FROM activities WHERE strava_activity_id = $1`,
+            [activityId]
+          );
           await removeFromQueue(activityId);
           processed.push({ activityId, action: "deleted" });
           continue;
@@ -209,14 +254,17 @@ export async function POST(request) {
 
         // ── Buscar eventos ativos do atleta ─────────────────
         const eventsResult = await query(
-          `SELECT e.id AS event_id, m.slug AS module_slug
+          `SELECT e.id AS event_id, e.name AS event_name, m.slug AS module_slug,
+                  e.start_date, e.end_date,
+                  ec.metadata AS config
            FROM athlete_events ae
            JOIN events e ON e.id = ae.event_id
            JOIN modules m ON m.id = e.module_id
-           WHERE ae.strava_id  = $1
-             AND ae.status     = 'active'
-             AND e.is_active   = true
-             AND m.is_active   = true`,
+           LEFT JOIN event_configs ec ON ec.event_id = e.id
+           WHERE ae.strava_id = $1
+             AND ae.status = 'active'
+             AND e.is_active = true
+             AND m.is_active = true`,
           [stravaId]
         );
 
@@ -241,25 +289,27 @@ export async function POST(request) {
 
         const stravaActivity = await stravaRes.json();
 
-        // ── Persistir dados completos no banco ──────────────
+        // ── Persistir dados completos no banco ─────────────
         await query(
           `UPDATE activities SET
              start_date              = $2,
-             distance_m              = $3,
-             moving_time             = $4,
-             elapsed_time            = $5,
-             total_elevation_gain    = $6,
-             commute                 = $7,
-             gear_id                 = $8,
-             device_name             = $9,
-             average_watts           = $10,
-             weighted_average_watts  = $11,
-             device_watts            = $12,
+             start_date_local        = $3,
+             distance_m              = $4,
+             moving_time             = $5,
+             elapsed_time            = $6,
+             total_elevation_gain    = $7,
+             commute                 = $8,
+             gear_id                 = $9,
+             device_name             = $10,
+             average_watts           = $11,
+             weighted_average_watts  = $12,
+             device_watts            = $13,
              updated_at              = NOW()
            WHERE strava_activity_id = $1`,
           [
             activityId,
             stravaActivity.start_date,
+            stravaActivity.start_date_local || null,
             stravaActivity.distance,
             stravaActivity.moving_time,
             stravaActivity.elapsed_time,
@@ -267,9 +317,9 @@ export async function POST(request) {
             stravaActivity.commute,
             stravaActivity.gear_id || null,
             stravaActivity.device_name || null,
-            stravaActivity.average_watts          ?? null,
+            stravaActivity.average_watts       ?? null,
             stravaActivity.weighted_average_watts ?? null,
-            stravaActivity.device_watts           ?? null,
+            stravaActivity.device_watts        ?? null,
           ]
         );
 
@@ -298,41 +348,96 @@ export async function POST(request) {
           continue;
         }
 
-        // ── Popular event_activities ────────────────────────
-        // Registra a atividade em cada evento ativo do atleta
-        // onde o sport_type é aceito pelo módulo.
-        // processed = false → sinaliza ao dispatcher que há trabalho pendente.
+        // ── Processar módulos ───────────────────────────────
+        const moduleOutputs = [];
+
         for (const event of eventsResult.rows) {
           const reg = MODULE_REGISTRY[event.module_slug];
-          if (!reg) continue;
 
+          if (!reg) continue;
+          if (reg.isRegistration) continue;
+
+          // Verificar sport_type aceito
           if (reg.acceptedSportTypes &&
               !reg.acceptedSportTypes.includes(stravaActivity.sport_type)) {
+            skipped.push({ activityId, reason: `sport_not_accepted:${stravaActivity.sport_type}` });
             continue;
           }
 
-          await query(
-            `INSERT INTO event_activities (event_id, strava_activity_id, processed)
-             VALUES ($1, $2, false)
-             ON CONFLICT (event_id, strava_activity_id)
-             DO UPDATE SET processed = false`,
-            [event.event_id, activityId]
-          );
+          const context = {
+            db:      { query },
+            event:   {
+              id:         event.event_id,
+              name:       event.event_name,
+              start_date: event.start_date,
+              end_date:   event.end_date,
+            },
+            athlete: { strava_id: stravaId },
+            config:  event.config || {},
+          };
+
+          try {
+            const result = await runModule({
+              moduleName:  event.module_slug,
+              context,
+              consolidate: reg.consolidate,
+              builders:    reg.builders,
+            });
+
+            if (result.descriptionBlock) {
+              moduleOutputs.push({
+                eventName: event.event_name,
+                block:     result.descriptionBlock,
+              });
+            }
+
+            await query(
+              `INSERT INTO event_module_processing
+                 (event_id, strava_activity_id, module_id, processed_at)
+               SELECT $1, $2, m.id, NOW()
+               FROM modules m WHERE m.slug = $3
+               ON CONFLICT (event_id, strava_activity_id, module_id)
+               DO UPDATE SET processed_at = NOW()`,
+              [event.event_id, activityId, event.module_slug]
+            );
+
+          } catch (moduleErr) {
+            console.error(`[Worker] Módulo ${event.module_slug} activity ${activityId}:`, moduleErr);
+            errors.push({ activityId, module: event.module_slug, error: moduleErr.message });
+          }
         }
 
-        // ── Delegar ao module-dispatcher (fire-and-forget) ──
-        const base = process.env.INTERNAL_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
-        fetch(`${base}/api/internal/module-dispatcher`, {
-          method:  "POST",
-          headers: {
-            "Authorization": `Bearer ${process.env.INTERNAL_WORKER_SECRET}`,
-            "Content-Type":  "application/json",
-          },
-          body: JSON.stringify({
-            strava_activity_id: activityId,
-            strava_id:          stravaId,
-          }),
-        }).catch(err => console.error("[Worker] Erro ao disparar dispatcher:", err));
+        // ── Merge + PUT Strava ──────────────────────────────
+        if (moduleOutputs.length > 0) {
+          const merged = mergeDescription(
+            stravaActivity.description || "",
+            moduleOutputs
+          );
+
+          if (merged !== null) {
+            const putRes = await fetch(`${STRAVA_API}/activities/${activityId}`, {
+              method: "PUT",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ description: merged }),
+            });
+
+            if (!putRes.ok) {
+              const body = await putRes.text();
+              console.error(`[Worker] PUT ${activityId} falhou:`, putRes.status, body);
+              errors.push({ activityId, reason: `strava_put_${putRes.status}` });
+              continue;
+            }
+
+            await query(
+              `UPDATE activities SET engine_last_put_at = NOW()
+               WHERE strava_activity_id = $1`,
+              [activityId]
+            );
+          }
+        }
 
         await removeFromQueue(activityId);
         processed.push({ activityId, action: "processed" });
