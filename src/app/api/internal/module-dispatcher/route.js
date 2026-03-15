@@ -61,13 +61,11 @@ const MODULE_REGISTRY = {
           AND ea.event_id           = $2
          WHERE a.strava_id      = $1
            AND a.duplicate_of IS NULL
-           AND a.sport_type     = ANY($3::text[])
-           AND a.start_date    <= (SELECT start_date FROM activities WHERE strava_activity_id = $4)
-           AND a.start_date    >= $5::timestamptz`,
+           AND a.start_date    <= (SELECT start_date FROM activities WHERE strava_activity_id = $3)
+           AND a.start_date    >= $4::timestamptz`,
         [
           context.stravaId,
           context.eventId,
-          context.acceptedSportTypes,
           context.activityId,
           context.eventStartDate,
         ]
@@ -85,16 +83,14 @@ const MODULE_REGISTRY = {
             AND ea.event_id           = $2
            WHERE a.strava_id      = $1
              AND a.duplicate_of IS NULL
-             AND a.sport_type     = ANY($3::text[])
-             AND a.start_date    <= (SELECT start_date FROM activities WHERE strava_activity_id = $4)
-             AND a.start_date    >= $5::timestamptz
+             AND a.start_date    <= (SELECT start_date FROM activities WHERE strava_activity_id = $3)
+             AND a.start_date    >= $4::timestamptz
            GROUP BY a.start_date::date
-           HAVING SUM(a.moving_time) >= $6
+           HAVING SUM(a.moving_time) >= $5
          ) active`,
         [
           context.stravaId,
           context.eventId,
-          context.acceptedSportTypes,
           context.activityId,
           context.eventStartDate,
           ACTIVE_DAY_MIN_SEC,
@@ -112,13 +108,11 @@ const MODULE_REGISTRY = {
           AND ea.event_id           = $2
          WHERE a.strava_id          = $1
            AND a.duplicate_of IS NULL
-           AND a.sport_type         = ANY($3::text[])
-           AND a.start_date::date   = (SELECT start_date::date FROM activities WHERE strava_activity_id = $4)
-           AND a.start_date        <= (SELECT start_date        FROM activities WHERE strava_activity_id = $4)`,
+           AND a.start_date::date   = (SELECT start_date::date FROM activities WHERE strava_activity_id = $3)
+           AND a.start_date        <= (SELECT start_date        FROM activities WHERE strava_activity_id = $3)`,
         [
           context.stravaId,
           context.eventId,
-          context.acceptedSportTypes,
           context.activityId,
         ]
       );
