@@ -42,11 +42,11 @@ Strava
 │  5. Enfileira: CREATE/UPDATE → +300s / DELETE → now
 │  6. Dispara worker (fire-and-forget)
 ▼
-[aguarda delay]
+[aguarda delay — processado pelo cron a cada 10min via cron-job.org]
 ▼
 /api/internal/strava-worker  (COLETOR — não conhece módulos)
 │
-│  SELECT queue WHERE next_run_at <= now LIMIT 20
+│  SELECT queue WHERE next_run_at <= now LIMIT 50
 │
 ├─ aspect_type = 'delete'?
 │   ├─ Para cada evento ativo do atleta com REPROCESS_ON_DELETE = true:
@@ -73,12 +73,12 @@ Strava
 │  SELECT event_activities WHERE processed = false
 │    JOIN events + modules
 │
-│  GET /activities/:id  ← Strava API (para sport_type e description original)
+│  GET /activities/:id  ← Strava API (sport_type + description original)
 │
 │  Para cada evento pendente:
 │    Filtra sport_type por ACCEPTED_SPORT_TYPES do módulo
-│    consolidate(context) → busca dados do banco (agenda_daily + agenda_goals)
-│    build(data, context) → computeTotals() + buildDescription() → string block
+│    consolidate(context) → soma direto de activities (ver contrato abaixo)
+│    build(data, context) → buildDescription() → string block
 │    Atualiza metadata: { module_slug: true }
 │
 │  mergeDescription(originalDescription, blocks[])
@@ -90,7 +90,6 @@ Strava
 │
 │  Para cada evento processado:
 │    sendPushNotification(eventId, eventName)
-│      → lê push_heading / push_body de events (fallback: textos padrão)
 │      → filtra por tag event_<slug> no OneSignal
 │      → POST /api/v1/notifications (fire-and-forget)
 ```
@@ -106,20 +105,37 @@ O dispatcher mantém seu próprio `MODULE_REGISTRY` com dois métodos por módul
   agenda: {
     acceptedSportTypes: [...],
 
-    // Busca dados consolidados do banco para o módulo
+    // Consolida dados diretamente de activities para a atividade X.
+    // Cada atividade é processada de forma independente e retroativamente
+    // ignorante — nunca sabe de atividades com start_date posterior.
     async consolidate(context) {
-      // context: { stravaId, eventId, eventName, startDate, endDate }
-      // retorna: { daily: [...] }
+      // context: {
+      //   stravaId, activityId, eventId, eventName,
+      //   eventStartDate, eventEndDate, acceptedSportTypes
+      // }
+      // retorna: {
+      //   totalDistanceM, totalMovingTimeSec, totalElevationM,
+      //   activeDays, dayMovingTimeSec,
+      //   goalDistanceKm, goalMovingTimeSec
+      // }
     },
 
-    // Gera o bloco de texto para a descrição da atividade
+    // Gera o bloco de texto para a descrição da atividade.
+    // Sempre retorna string — nunca null.
+    // Passa activeDays: null ao buildDescription se dayMovingTimeSec < 900s.
     build(data, context) {
-      // data: retorno de consolidate()
       // retorna: string (bloco de descrição)
     },
   }
 }
 ```
+
+### Lógica de acumulado (agenda)
+
+- **Distância / tempo / elevação:** soma de atividades com `start_date <= start_date de X`
+- **Dias ativos:** dias com `SUM(moving_time) >= 900s` para atividades com `start_date <= start_date de X`
+- **dayMovingTimeSec:** soma do dia de X apenas para atividades com `start_date <= start_date de X`
+- **Linha `🗓️`:** exibida apenas se `dayMovingTimeSec >= 900s` — omitida caso contrário, sem atualização retroativa
 
 `mergeDescription` recebe `string[]` — cada elemento é o retorno de `build()`.
 
@@ -129,7 +145,8 @@ O dispatcher mantém seu próprio `MODULE_REGISTRY` com dois métodos por módul
 
 Disparada pelo dispatcher após cada PUT bem-sucedido no Strava, para cada evento processado.
 
-- **Segmentação:** apenas devices com tag `event_<slug> = true` recebem
+- **Segmentação:** devices com tag `event_<slug> = true` e `strava_id = <id>`
+- **Registro de device:** feito em `/api/push/register` a cada acesso ao dashboard
 - **Textos:** configuráveis por evento em `events.push_heading` / `events.push_body`
 - **Fallback:** `"OGT Event Engine"` / `"Nova atividade processada e descrição atualizada."`
 - **Fire-and-forget:** erros de push não afetam o fluxo principal
@@ -166,6 +183,17 @@ O reprocessamento garante que os totais do módulo sejam recalculados após a re
 
 ---
 
+## Papel do `agenda_daily`
+
+O `agenda_daily` é usado exclusivamente pelo **dashboard** (`/api/agenda/[slug]/route.js`).
+O dispatcher **não** usa `agenda_daily` para gerar blocos de descrição — lê diretamente
+de `activities` para garantir acumulado correto por atividade individual.
+
+O backfill (`/api/agenda/backfill`) e o sync manual (`/api/agenda/sync`) continuam
+populando `agenda_daily` normalmente para alimentar o dashboard.
+
+---
+
 ## Fluxo de Backfill (inscrição)
 
 ```
@@ -178,7 +206,7 @@ O reprocessamento garante que os totais do módulo sejam recalculados após a re
    ▼
    UPSERT activities
    UPSERT event_activities
-   UPSERT agenda_daily (consolidação por dia)
+   UPSERT agenda_daily (consolidação por dia — para o dashboard)
 ```
 
 O backfill não faz PUT no Strava — apenas consolida dados históricos para o dashboard.

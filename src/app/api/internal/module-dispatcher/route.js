@@ -5,13 +5,13 @@ import { mergeDescription } from "@/engine/mergeDescription";
 
 // Módulos registrados
 import { ACCEPTED_SPORT_TYPES } from "@/engine/modules/agenda/index.js";
-import { computeTotals }        from "@/engine/modules/agenda/computeTotals.js";
 import { buildDescription }     from "@/engine/modules/agenda/buildDescription.js";
 
 export const runtime     = "nodejs";
 export const maxDuration = 60;
 
-const STRAVA_API = "https://www.strava.com/api/v3";
+const STRAVA_API         = "https://www.strava.com/api/v3";
+const ACTIVE_DAY_MIN_SEC = 900; // 15 minutos
 
 /**
  * ============================================================
@@ -19,7 +19,6 @@ const STRAVA_API = "https://www.strava.com/api/v3";
  * ============================================================
  *
  * Registra módulos ativos e seus contratos:
- *   prepare(context)     → atualiza dados derivados antes do consolidate
  *   consolidate(context) → dados para os builders
  *   build(data, context) → descriptionBlock string
  *   acceptedSportTypes   → filtra antes de processar
@@ -33,83 +32,138 @@ const MODULE_REGISTRY = {
     acceptedSportTypes: ACCEPTED_SPORT_TYPES,
 
     /**
-     * Recalcula agenda_daily para o dia da atividade.
-     * Garante que a consolidação reflita dados atualizados
-     * mesmo para atividades recebidas via webhook (não backfill).
+     * Consolida dados diretamente de activities para a atividade X.
+     *
+     * Cada atividade é processada de forma independente e retroativamente
+     * ignorante — nunca sabe de atividades com start_date posterior.
+     *
+     * Acumulado (distância, tempo, elevação):
+     *   Soma de todas as atividades aceitas com start_date <= start_date de X.
+     *
+     * Dias ativos:
+     *   Dias onde SUM(moving_time) das atividades com start_date <= start_date de X >= 900s.
+     *
+     * dayMovingTimeSec:
+     *   Soma do moving_time do dia de X, apenas para atividades com
+     *   start_date <= start_date de X. Usado para decidir se exibe a
+     *   linha de dias ativos no bloco.
      */
-    async prepare(context) {
-      await query(
-        `INSERT INTO agenda_daily (
-           event_id, strava_id, activity_date,
-           total_distance_m, total_elevation_gain_m,
-           total_moving_time_sec, total_elapsed_time_sec,
-           treino_distance_m, desloc_distance_m,
-           treino_moving_time_sec, desloc_moving_time_sec
-         )
-         SELECT
-           $1, $2, $3::date,
-           COALESCE(SUM(distance_m), 0)::integer,
-           COALESCE(SUM(total_elevation_gain), 0)::integer,
-           COALESCE(SUM(moving_time), 0)::integer,
-           COALESCE(SUM(elapsed_time), 0)::integer,
-           COALESCE(SUM(CASE WHEN commute = false THEN distance_m  ELSE 0 END), 0)::integer,
-           COALESCE(SUM(CASE WHEN commute = true  THEN distance_m  ELSE 0 END), 0)::integer,
-           COALESCE(SUM(CASE WHEN commute = false THEN moving_time ELSE 0 END), 0)::integer,
-           COALESCE(SUM(CASE WHEN commute = true  THEN moving_time ELSE 0 END), 0)::integer
-         FROM activities
-         WHERE strava_id  = $2
-           AND start_date::date = $3::date
-           AND duplicate_of IS NULL
-         ON CONFLICT (event_id, strava_id, activity_date) DO UPDATE SET
-           total_distance_m       = EXCLUDED.total_distance_m,
-           total_elevation_gain_m = EXCLUDED.total_elevation_gain_m,
-           total_moving_time_sec  = EXCLUDED.total_moving_time_sec,
-           total_elapsed_time_sec = EXCLUDED.total_elapsed_time_sec,
-           treino_distance_m      = EXCLUDED.treino_distance_m,
-           desloc_distance_m      = EXCLUDED.desloc_distance_m,
-           treino_moving_time_sec = EXCLUDED.treino_moving_time_sec,
-           desloc_moving_time_sec = EXCLUDED.desloc_moving_time_sec`,
-        [context.eventId, context.stravaId, context.activityDate]
+    async consolidate(context) {
+      // ── Totais acumulados até e incluindo a atividade X ──
+      const totalsResult = await query(
+        `SELECT
+           COALESCE(SUM(a.distance_m), 0)          AS total_distance_m,
+           COALESCE(SUM(a.moving_time), 0)          AS total_moving_time_sec,
+           COALESCE(SUM(a.total_elevation_gain), 0) AS total_elevation_gain_m
+         FROM activities a
+         JOIN event_activities ea
+           ON ea.strava_activity_id = a.strava_activity_id
+          AND ea.event_id           = $2
+         WHERE a.strava_id      = $1
+           AND a.duplicate_of IS NULL
+           AND a.sport_type     = ANY($3::text[])
+           AND a.start_date    <= (SELECT start_date FROM activities WHERE strava_activity_id = $4)
+           AND a.start_date    >= $5::timestamptz`,
+        [
+          context.stravaId,
+          context.eventId,
+          context.acceptedSportTypes,
+          context.activityId,
+          context.eventStartDate,
+        ]
       );
+
+      // ── Dias ativos até e incluindo o dia de X ────────────
+      // Considera apenas atividades com start_date <= start_date de X
+      const activeDaysResult = await query(
+        `SELECT COUNT(*) AS active_days
+         FROM (
+           SELECT a.start_date::date AS day
+           FROM activities a
+           JOIN event_activities ea
+             ON ea.strava_activity_id = a.strava_activity_id
+            AND ea.event_id           = $2
+           WHERE a.strava_id      = $1
+             AND a.duplicate_of IS NULL
+             AND a.sport_type     = ANY($3::text[])
+             AND a.start_date    <= (SELECT start_date FROM activities WHERE strava_activity_id = $4)
+             AND a.start_date    >= $5::timestamptz
+           GROUP BY a.start_date::date
+           HAVING SUM(a.moving_time) >= $6
+         ) active`,
+        [
+          context.stravaId,
+          context.eventId,
+          context.acceptedSportTypes,
+          context.activityId,
+          context.eventStartDate,
+          ACTIVE_DAY_MIN_SEC,
+        ]
+      );
+
+      // ── Moving time do dia de X até e incluindo X ─────────
+      // Soma apenas atividades com start_date <= start_date de X
+      // no mesmo dia — para decidir se exibe linha de dias ativos
+      const dayMovingTimeResult = await query(
+        `SELECT COALESCE(SUM(a.moving_time), 0) AS day_moving_time_sec
+         FROM activities a
+         JOIN event_activities ea
+           ON ea.strava_activity_id = a.strava_activity_id
+          AND ea.event_id           = $2
+         WHERE a.strava_id          = $1
+           AND a.duplicate_of IS NULL
+           AND a.sport_type         = ANY($3::text[])
+           AND a.start_date::date   = (SELECT start_date::date FROM activities WHERE strava_activity_id = $4)
+           AND a.start_date        <= (SELECT start_date        FROM activities WHERE strava_activity_id = $4)`,
+        [
+          context.stravaId,
+          context.eventId,
+          context.acceptedSportTypes,
+          context.activityId,
+        ]
+      );
+
+      // ── Metas do atleta ───────────────────────────────────
+      const goalsResult = await query(
+        `SELECT goal_distance_km, goal_moving_time_sec
+         FROM agenda_goals
+         WHERE event_id = $1 AND strava_id = $2`,
+        [context.eventId, context.stravaId]
+      );
+
+      const totals        = totalsResult.rows[0];
+      const activeDays    = parseInt(activeDaysResult.rows[0].active_days);
+      const dayMovingTime = parseFloat(dayMovingTimeResult.rows[0].day_moving_time_sec);
+      const goals         = goalsResult.rows[0] || {};
+
+      return {
+        totalDistanceM:     parseFloat(totals.total_distance_m),
+        totalMovingTimeSec: parseFloat(totals.total_moving_time_sec),
+        totalElevationM:    parseFloat(totals.total_elevation_gain_m),
+        activeDays,
+        dayMovingTimeSec:   dayMovingTime,
+        goalDistanceKm:     parseFloat(goals.goal_distance_km     || 0),
+        goalMovingTimeSec:  parseFloat(goals.goal_moving_time_sec  || 0),
+      };
     },
 
     /**
-     * Consolida dados do banco para o módulo.
-     * endDate = activityDate → acumulado até o dia da atividade,
-     * não até o fim do evento.
+     * Gera bloco de descrição a partir dos dados consolidados.
+     *
+     * activeDays é passado como null se o dia ainda não atingiu 900s
+     * até esta atividade — buildDescription omite a linha 🗓️ nesse caso.
+     * O bloco é sempre gerado.
      */
-    async consolidate(context) {
-      const result = await query(
-        `SELECT
-           d.activity_date,
-           d.total_distance_m,
-           d.total_elevation_gain_m,
-           d.total_moving_time_sec,
-           d.total_elapsed_time_sec,
-           d.treino_distance_m,
-           d.desloc_distance_m,
-           d.treino_moving_time_sec,
-           d.desloc_moving_time_sec,
-           g.goal_distance_km,
-           g.goal_moving_time_sec
-         FROM agenda_daily d
-         LEFT JOIN agenda_goals g
-           ON g.event_id = d.event_id AND g.strava_id = d.strava_id
-         WHERE d.event_id      = $1
-           AND d.strava_id     = $2
-           AND d.activity_date >= $3
-           AND d.activity_date <= $4
-         ORDER BY d.activity_date`,
-        [context.eventId, context.stravaId, context.startDate, context.activityDate]
-      );
-      return { daily: result.rows };
-    },
-
-    // Gera bloco de descrição
     build(data, context) {
-      const totals = computeTotals(data);
       return buildDescription({
-        totals,
+        totals: {
+          totalDistanceM:     data.totalDistanceM,
+          totalMovingTimeSec: data.totalMovingTimeSec,
+          totalElevationM:    data.totalElevationM,
+          activeDays:         data.dayMovingTimeSec >= ACTIVE_DAY_MIN_SEC ? data.activeDays : null,
+          goalDistanceKm:     data.goalDistanceKm,
+          goalMovingTimeSec:  data.goalMovingTimeSec,
+        },
         context: {
           event: {
             name:  context.eventName,
@@ -130,9 +184,8 @@ const MODULE_REGISTRY = {
  * Responsabilidades:
  *   1. Buscar event_activities pendentes para a atividade
  *   2. Para cada evento:
- *      a. prepare()     → atualiza agenda_daily para o dia da atividade
- *      b. consolidate() → lê dados acumulados até o dia da atividade
- *      c. build()       → gera descriptionBlock
+ *      a. consolidate() → acumulado até esta atividade direto de activities
+ *      b. build()       → gera descriptionBlock
  *   3. mergeDescription → PUT Strava
  *   4. Atualizar metadata em event_activities
  *   5. Atualizar engine_last_put_at em activities
@@ -154,9 +207,8 @@ export async function POST(request) {
 
   try {
     // ── Buscar activity no banco ──────────────────────────
-    // last_webhook_aspect = 'delete' → nada a processar
     const actResult = await query(
-      `SELECT last_webhook_aspect, start_date::date AS activity_date
+      `SELECT last_webhook_aspect
        FROM activities WHERE strava_activity_id = $1`,
       [activityId]
     );
@@ -168,11 +220,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, reason: "delete_skipped" });
     }
 
-    const activityDate = actResult.rows[0].activity_date; // 'YYYY-MM-DD'
-
     // ── Buscar sport_type no Strava ───────────────────────
-    // Necessário para filtrar por ACCEPTED_SPORT_TYPES.
-    // Token com refresh automático.
     const token     = await getValidAccessToken(stravaId);
     const stravaRes = await fetch(`${STRAVA_API}/activities/${activityId}`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -188,9 +236,11 @@ export async function POST(request) {
 
     // ── event_activities pendentes para esta atividade ───
     const pendingResult = await query(
-      `SELECT ea.event_id, ea.metadata,
-              e.name AS event_name, e.start_date, e.end_date,
-              m.slug AS module_slug
+      `SELECT ea.event_id,
+              e.name                              AS event_name,
+              TO_CHAR(e.start_date, 'YYYY-MM-DD') AS event_start_date,
+              TO_CHAR(e.end_date,   'YYYY-MM-DD') AS event_end_date,
+              m.slug                              AS module_slug
        FROM event_activities ea
        JOIN events  e ON e.id  = ea.event_id
        JOIN modules m ON m.id  = e.module_id
@@ -217,37 +267,26 @@ export async function POST(request) {
         continue;
       }
 
-      // Filtrar sport_type
       if (reg.acceptedSportTypes && !reg.acceptedSportTypes.includes(sportType)) {
-        // Marca como processado mesmo assim — não há o que fazer com esse sport
         await markProcessed(row.event_id, activityId, row.module_slug);
         continue;
       }
 
       const context = {
         stravaId,
-        eventId:      row.event_id,
-        eventName:    row.event_name,
-        startDate:    row.start_date,
-        endDate:      row.end_date,
-        activityDate,           // data da atividade — usado como teto do consolidate
+        activityId,
+        eventId:            row.event_id,
+        eventName:          row.event_name,
+        eventStartDate:     row.event_start_date,
+        eventEndDate:       row.event_end_date,
+        acceptedSportTypes: reg.acceptedSportTypes,
       };
 
       try {
-        // a. Atualiza agenda_daily para o dia da atividade
-        if (reg.prepare) {
-          await reg.prepare(context);
-        }
-
-        // b. Consolida dados acumulados até o dia da atividade
         const data  = await reg.consolidate(context);
-
-        // c. Gera bloco de descrição
         const block = reg.build(data, context);
 
-        if (block) {
-          moduleOutputs.push(block);
-        }
+        if (block) moduleOutputs.push(block);
 
         await markProcessed(row.event_id, activityId, row.module_slug);
         processedEvents.push(row.event_id);
@@ -277,21 +316,21 @@ export async function POST(request) {
           return NextResponse.json({ ok: false, reason: `strava_put_${putRes.status}` });
         }
 
-        // Atualizar loop guard
         await query(
           `UPDATE activities SET engine_last_put_at = NOW()
            WHERE strava_activity_id = $1`,
           [activityId]
         );
 
-        // ── Notificação push ──────────────────────────────
         for (const eventId of processedEvents) {
-          sendPushNotification(eventId, pendingResult.rows.find(r => r.event_id === eventId)?.event_name || "");
+          sendPushNotification(
+            eventId,
+            pendingResult.rows.find(r => r.event_id === eventId)?.event_name || ""
+          );
         }
       }
     }
 
-    // Marcar event_activities.processed = true
     if (processedEvents.length > 0) {
       for (const eventId of processedEvents) {
         await query(
@@ -316,10 +355,6 @@ export async function POST(request) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Marca módulo como processado no metadata de event_activities.
- * { agenda: true } — extensível para múltiplos módulos por evento.
- */
 async function markProcessed(eventId, activityId, moduleSlug) {
   await query(
     `UPDATE event_activities
@@ -329,11 +364,6 @@ async function markProcessed(eventId, activityId, moduleSlug) {
   );
 }
 
-/**
- * Dispara notificação push via OneSignal REST API.
- * Segmenta por tag event_<slug> — apenas atletas com opt-in ativo recebem.
- * Fire-and-forget: erros são logados mas não afetam o fluxo principal.
- */
 function sendPushNotification(eventId, eventName) {
   const appId  = process.env.ONESIGNAL_APP_ID;
   const apiKey = process.env.ONESIGNAL_API_KEY;
