@@ -3,8 +3,7 @@ import { query } from "@/lib/db";
 import { getValidAccessToken } from "@/lib/strava";
 import { mergeDescription } from "@/engine/mergeDescription";
 
-import { ACCEPTED_SPORT_TYPES } from "@/engine/modules/agenda/index.js";
-import { buildDescription }     from "@/engine/modules/agenda/buildDescription.js";
+import { buildDescription } from "@/engine/modules/agenda/buildDescription.js";
 
 export const runtime     = "nodejs";
 export const maxDuration = 60;
@@ -18,17 +17,16 @@ const ACTIVE_DAY_MIN_SEC = 900;
  * ============================================================
  *
  * Cada módulo expõe:
- *   acceptedSportTypes → filtra antes de processar
  *   consolidate(context) → dados consolidados direto de activities
  *   build(data, context) → string do bloco de descrição
  *
+ * accepted_sport_types é lido de event_configs.metadata por evento (ADR-010).
  * Para adicionar um módulo: adicionar entrada aqui.
  * Worker e dispatcher não precisam de outras alterações.
  * ============================================================
  */
 const MODULE_REGISTRY = {
   agenda: {
-    acceptedSportTypes: ACCEPTED_SPORT_TYPES,
 
     /**
      * Consolida dados diretamente de activities para a atividade X.
@@ -263,10 +261,12 @@ export async function POST(request) {
               e.name                              AS event_name,
               TO_CHAR(e.start_date, 'YYYY-MM-DD') AS event_start_date,
               TO_CHAR(e.end_date,   'YYYY-MM-DD') AS event_end_date,
-              m.slug                              AS module_slug
+              m.slug                              AS module_slug,
+              ec.metadata->>'accepted_sport_types' AS accepted_sport_types_json
        FROM event_activities ea
-       JOIN events  e ON e.id = ea.event_id
-       JOIN modules m ON m.id = e.module_id
+       JOIN events  e  ON e.id  = ea.event_id
+       JOIN modules m  ON m.id  = e.module_id
+       LEFT JOIN event_configs ec ON ec.event_id = e.id
        WHERE ea.strava_activity_id = $1
          AND ea.processed          = false
          AND e.is_active           = true
@@ -304,7 +304,12 @@ export async function POST(request) {
         continue;
       }
 
-      if (reg.acceptedSportTypes && !reg.acceptedSportTypes.includes(sportType)) {
+      // accepted_sport_types vem de event_configs.metadata (ADR-010)
+      const acceptedSportTypes = row.accepted_sport_types_json
+        ? JSON.parse(row.accepted_sport_types_json)
+        : null;
+
+      if (acceptedSportTypes && !acceptedSportTypes.includes(sportType)) {
         // Sport não aceito — marca como processado sem gerar bloco
         await query(
           `UPDATE event_activities SET processed = true
