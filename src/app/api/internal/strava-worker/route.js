@@ -309,15 +309,38 @@ export async function POST(request) {
           );
         }
 
-        // ── Upsert event_activities ────────────────────────
-        // Garante que a atividade está vinculada a todos os
-        // eventos ativos — necessário para o dispatcher processar.
+        // ── Reprocessar atividades posteriores ─────────────
+        // Uma atividade inserida fora de ordem cronológica
+        // (CREATE ou UPDATE tardio) distorce os consolidados
+        // de todas as atividades posteriores do atleta no evento.
+        // Marca como não processadas e enfileira para recalcular.
         for (const event of eventsResult.rows) {
           await query(
-            `INSERT INTO event_activities (event_id, strava_activity_id, processed)
-             VALUES ($1, $2, false)
-             ON CONFLICT (event_id, strava_activity_id) DO NOTHING`,
-            [event.event_id, activityId]
+            `UPDATE event_activities SET processed = false
+             WHERE event_id = $1
+               AND strava_activity_id IN (
+                 SELECT a.strava_activity_id
+                 FROM activities a
+                 WHERE a.strava_id           = $2
+                   AND a.strava_activity_id <> $3
+                   AND a.start_date          > (SELECT start_date FROM activities WHERE strava_activity_id = $3)
+                   AND a.duplicate_of IS NULL
+               )`,
+            [event.event_id, stravaId, activityId]
+          );
+
+          await query(
+            `INSERT INTO activity_processing_queue (strava_activity_id, next_run_at)
+             SELECT ea.strava_activity_id, NOW()
+             FROM event_activities ea
+             JOIN activities a ON a.strava_activity_id = ea.strava_activity_id
+             WHERE ea.event_id            = $1
+               AND a.strava_id            = $2
+               AND a.strava_activity_id  <> $3
+               AND a.start_date           > (SELECT start_date FROM activities WHERE strava_activity_id = $3)
+               AND a.duplicate_of IS NULL
+             ON CONFLICT (strava_activity_id) DO UPDATE SET next_run_at = NOW()`,
+            [event.event_id, stravaId, activityId]
           );
         }
 
