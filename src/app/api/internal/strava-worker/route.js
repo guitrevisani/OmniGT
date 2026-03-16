@@ -203,22 +203,21 @@ export async function POST(request) {
           continue;
         }
 
-        // ── Verificar eventos ativos ────────────────────────
-        // Necessário antes de chamar o Strava para evitar
-        // consumo de API em atividades sem evento ativo.
-        const eventsCheck = await query(
-          `SELECT 1 FROM athlete_events ae
+        // ── Buscar eventos ativos do atleta ─────────────────
+        // Retorna todos os eventos para upsert em event_activities.
+        const eventsResult = await query(
+          `SELECT e.id AS event_id
+           FROM athlete_events ae
            JOIN events e ON e.id = ae.event_id
            JOIN modules m ON m.id = e.module_id
            WHERE ae.strava_id = $1
              AND ae.status   = 'active'
              AND e.is_active = true
-             AND m.is_active = true
-           LIMIT 1`,
+             AND m.is_active = true`,
           [stravaId]
         );
 
-        if (eventsCheck.rows.length === 0) {
+        if (eventsResult.rows.length === 0) {
           await removeFromQueue(activityId);
           skipped.push({ activityId, reason: "no_active_events" });
           continue;
@@ -296,6 +295,30 @@ export async function POST(request) {
           await removeFromQueue(activityId);
           skipped.push({ activityId, reason: "duplicate", duplicate_of: duplicateOf });
           continue;
+        }
+
+        // ── Upsert event_activities ────────────────────────
+        // Garante que a atividade está vinculada a todos os
+        // eventos ativos — necessário para o dispatcher processar.
+        for (const event of eventsResult.rows) {
+          await query(
+            `INSERT INTO event_activities (event_id, strava_activity_id, processed)
+             VALUES ($1, $2, false)
+             ON CONFLICT (event_id, strava_activity_id) DO NOTHING`,
+            [event.event_id, activityId]
+          );
+        }
+
+        // ── Upsert event_activities ────────────────────────
+        // Garante que a atividade está vinculada a todos os
+        // eventos ativos — necessário para o dispatcher processar.
+        for (const event of eventsResult.rows) {
+          await query(
+            `INSERT INTO event_activities (event_id, strava_activity_id, processed)
+             VALUES ($1, $2, false)
+             ON CONFLICT (event_id, strava_activity_id) DO NOTHING`,
+            [event.event_id, activityId]
+          );
         }
 
         // ── Chamar dispatcher ───────────────────────────────
