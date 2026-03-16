@@ -357,7 +357,7 @@ export default function AgendaDashboard({ slug }) {
       if (isSubscribed) {
         // Device já inscrito — garantir tags e registro no banco atualizados
         const playerId = OneSignal.User.PushSubscription.id;
-        OneSignal.User.addTags({ [`event_${slug}`]: "true" });
+        OneSignal.User.addTags({ [`event_${slug}`]: "true", strava_id: String(data.strava_id) });
         if (playerId) {
           fetch("/api/push/register", {
             method:  "POST",
@@ -376,7 +376,7 @@ export default function AgendaDashboard({ slug }) {
         if (event.current.optedIn) {
           const playerId = event.current.id;
           setPushStatus("subscribed");
-          OneSignal.User.addTags({ [`event_${slug}`]: "true" });
+          OneSignal.User.addTags({ [`event_${slug}`]: "true", strava_id: String(data.strava_id) });
           // Aguarda 2s para garantir que o OneSignal processou o device
           // antes de aplicar as tags via API REST
           setTimeout(() => {

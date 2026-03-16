@@ -92,6 +92,7 @@ export async function GET(request, { params }) {
 
     return NextResponse.json({
       push_consent: push_consent === true,
+      strava_id: stravaId,
       event: {
         id:         event.id,
         name:       event.name,
