@@ -3,7 +3,9 @@ import { query } from "@/lib/db";
 import { getValidAccessToken } from "@/lib/strava";
 import { mergeDescription } from "@/engine/mergeDescription";
 
-import { buildDescription } from "@/engine/modules/agenda/buildDescription.js";
+import { buildDescription }                    from "@/engine/modules/agenda/buildDescription.js";
+import { consolidate as campConsolidate,
+         buildDescription as campBuildDescription } from "@/engine/modules/camp/index.js";
 
 export const runtime     = "nodejs";
 export const maxDuration = 60;
@@ -128,6 +130,27 @@ const MODULE_REGISTRY = {
         context: {
           event: { name: context.eventName, goals: {} },
         },
+      });
+    },
+  },
+
+  camp: {
+    /**
+     * Orquestra match de sessão, acumulados, NP, FTP e IF.
+     * Toda a lógica está em src/engine/modules/camp/index.js.
+     */
+    async consolidate(context) {
+      return campConsolidate(context);
+    },
+
+    build(data, context) {
+      return campBuildDescription({
+        eventName:    context.eventName,
+        totals:       data.totals,
+        np:           data.np,
+        npEstimated:  data.npEstimated,
+        ifValue:      data.ifValue,
+        ftpEstimated: data.ftpEstimated,
       });
     },
   },
@@ -326,6 +349,7 @@ export async function POST(request) {
         eventName:      row.event_name,
         eventStartDate: row.event_start_date,
         eventEndDate:   row.event_end_date,
+        startDateLocal: activityDate,
       };
 
       try {
