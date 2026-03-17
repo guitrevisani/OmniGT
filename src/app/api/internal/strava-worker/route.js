@@ -253,6 +253,7 @@ export async function POST(request) {
              average_watts          = $11,
              weighted_average_watts = $12,
              device_watts           = $13,
+             strava_route_id        = $14,
              updated_at             = NOW()
            WHERE strava_activity_id = $1`,
           [
@@ -269,6 +270,7 @@ export async function POST(request) {
             stravaActivity.average_watts          ?? null,
             stravaActivity.weighted_average_watts ?? null,
             stravaActivity.device_watts           ?? null,
+            stravaActivity.route_id               || null,
           ]
         );
 
