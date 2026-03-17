@@ -61,7 +61,7 @@ async function matchByDatetime(eventId, activityDate, startDateLocal) {
     `SELECT cs.id AS session_id, cs.day_number, cs.session_order,
             cs.short_description,
             ABS(EXTRACT(EPOCH FROM (
-              $3::timestamp::time - cs.scheduled_start
+              $2::timestamp::time - cs.scheduled_start
             )) / 60) AS diff_min
      FROM camp_sessions cs
      WHERE cs.event_id         = $1
@@ -72,16 +72,16 @@ async function matchByDatetime(eventId, activityDate, startDateLocal) {
            WHERE event_id = $1
              AND scheduled_start IS NOT NULL
            ORDER BY ABS(EXTRACT(EPOCH FROM (
-             $3::timestamp::time - scheduled_start
+             $2::timestamp::time - scheduled_start
            )))
            LIMIT 1
        )
        AND ABS(EXTRACT(EPOCH FROM (
-         $3::timestamp::time - cs.scheduled_start
-       )) / 60) <= $4
+         $2::timestamp::time - cs.scheduled_start
+       )) / 60) <= $3
      ORDER BY diff_min ASC
      LIMIT 1`,
-    [eventId, activityDate, startDateLocal, SCHEDULE_TOLERANCE_MIN]
+    [eventId, startDateLocal, SCHEDULE_TOLERANCE_MIN]
   );
 
   return result.rows[0] || null;
