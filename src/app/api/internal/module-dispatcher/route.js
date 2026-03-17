@@ -200,6 +200,7 @@ async function upsertAgendaDaily(stravaId, eventId, activityDate) {
 function sendPushNotification(eventId, eventName) {
   const appId  = process.env.ONESIGNAL_APP_ID;
   const apiKey = process.env.ONESIGNAL_API_KEY;
+  console.log(`[Dispatcher] sendPush appId=${appId ? 'ok' : 'MISSING'} apiKey=${apiKey ? 'ok' : 'MISSING'}`);
   if (!appId || !apiKey) return;
 
   query(`SELECT slug FROM events WHERE id = $1`, [eventId])
