@@ -351,6 +351,7 @@ export default function AgendaDashboard({ slug }) {
 
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     window.OneSignalDeferred.push(async (OneSignal) => {
+      await new Promise(r => setTimeout(r, 1500));
       const isSubscribed = await OneSignal.User.PushSubscription.optedIn;
       setPushStatus(isSubscribed ? "subscribed" : "idle");
 
