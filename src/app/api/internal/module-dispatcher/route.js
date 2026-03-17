@@ -409,9 +409,9 @@ export async function POST(request) {
           await upsertAgendaDaily(stravaId, eventId, activityDate);
         }
 
-        // ── Push notification (fire-and-forget) ───────────
+        // ── Push notification ────────────────────────────
         for (const eventId of processedEvents) {
-          sendPushNotification(
+          await sendPushNotification(
             eventId,
             pendingResult.rows.find(r => r.event_id === eventId)?.event_name || "",
             stravaId
