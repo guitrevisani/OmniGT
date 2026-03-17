@@ -222,8 +222,8 @@ async function sendPushNotification(eventId, eventName, stravaId) {
       },
       body: JSON.stringify({
         app_id:   appId,
-        headings: { pt: eventName || "OGT Event Engine" },
-        contents: { pt: "Nova atividade processada e descrição atualizada." },
+        headings: { en: eventName || "OGT Event Engine", pt: eventName || "OGT Event Engine" },
+contents: { en: "New activity processed.", pt: "Nova atividade processada e descrição atualizada." },
         filters:  [
           { field: "tag", key: `event_${slug}`, relation: "=", value: "true" },
           { operator: "AND" },
