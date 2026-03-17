@@ -221,7 +221,10 @@ function sendPushNotification(eventId, eventName) {
             { field: "tag", key: `event_${slug}`, relation: "=", value: "true" },
           ],
         }),
-      }).catch(err => console.error("[Dispatcher] Erro ao enviar push:", err));
+      }).then(async res => {
+  const body = await res.text();
+  console.log(`[Dispatcher] Push response ${res.status}:`, body);
+}).catch(err => console.error("[Dispatcher] Erro ao enviar push:", err));
     })
     .catch(err => console.error("[Dispatcher] Erro ao buscar slug para push:", err));
 }
