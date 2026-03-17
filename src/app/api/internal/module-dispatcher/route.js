@@ -197,37 +197,45 @@ async function upsertAgendaDaily(stravaId, eventId, activityDate) {
   );
 }
 
-function sendPushNotification(eventId, eventName) {
+async function sendPushNotification(eventId, eventName, stravaId) {
   const appId  = process.env.ONESIGNAL_APP_ID;
   const apiKey = process.env.ONESIGNAL_API_KEY;
-  console.log(`[Dispatcher] sendPush appId=${appId ? 'ok' : 'MISSING'} apiKey=${apiKey ? 'ok' : 'MISSING'}`);
-  if (!appId || !apiKey) return;
+  if (!appId || !apiKey) {
+    console.log(`[Dispatcher] Push — variáveis ausentes`);
+    return;
+  }
 
-  query(`SELECT slug FROM events WHERE id = $1`, [eventId])
-    .then(result => {
-      if (result.rows.length === 0) return;
-      const slug = result.rows[0].slug;
+  try {
+    const result = await query(`SELECT slug FROM events WHERE id = $1`, [eventId]);
+    if (result.rows.length === 0) {
+      console.log(`[Dispatcher] Push — evento ${eventId} não encontrado`);
+      return;
+    }
+    const slug = result.rows[0].slug;
+    console.log(`[Dispatcher] Push — slug=${slug} strava_id=${stravaId}`);
 
-      fetch("https://onesignal.com/api/v1/notifications", {
-        method:  "POST",
-        headers: {
-          "Content-Type":  "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          app_id:   appId,
-          headings: { pt: eventName || "OGT Event Engine" },
-          contents: { pt: "Nova atividade processada e descrição atualizada." },
-          filters:  [
-            { field: "tag", key: `event_${slug}`, relation: "=", value: "true" },
-          ],
-        }),
-      }).then(async res => {
-  const body = await res.text();
-  console.log(`[Dispatcher] Push response ${res.status}:`, body);
-}).catch(err => console.error("[Dispatcher] Erro ao enviar push:", err));
-    })
-    .catch(err => console.error("[Dispatcher] Erro ao buscar slug para push:", err));
+    const pushRes = await fetch("https://onesignal.com/api/v1/notifications", {
+      method:  "POST",
+      headers: {
+        "Content-Type":  "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        app_id:   appId,
+        headings: { pt: eventName || "OGT Event Engine" },
+        contents: { pt: "Nova atividade processada e descrição atualizada." },
+        filters:  [
+          { field: "tag", key: `event_${slug}`, relation: "=", value: "true" },
+          { operator: "AND" },
+          { field: "tag", key: "strava_id", relation: "=", value: String(stravaId) },
+        ],
+      }),
+    });
+    const pushBody = await pushRes.text();
+    console.log(`[Dispatcher] Push response ${pushRes.status}:`, pushBody);
+  } catch (err) {
+    console.error("[Dispatcher] Erro ao enviar push:", err);
+  }
 }
 
 // ─── Handler principal ────────────────────────────────────────────────────────
@@ -401,12 +409,12 @@ export async function POST(request) {
           await upsertAgendaDaily(stravaId, eventId, activityDate);
         }
 
-        console.log(`[Dispatcher] Push — processedEvents: ${JSON.stringify(processedEvents)}, outputs: ${moduleOutputs.length}`);
         // ── Push notification (fire-and-forget) ───────────
         for (const eventId of processedEvents) {
           sendPushNotification(
             eventId,
-            pendingResult.rows.find(r => r.event_id === eventId)?.event_name || ""
+            pendingResult.rows.find(r => r.event_id === eventId)?.event_name || "",
+            stravaId
           );
         }
       }
