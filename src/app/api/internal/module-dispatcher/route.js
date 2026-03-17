@@ -400,6 +400,7 @@ export async function POST(request) {
           await upsertAgendaDaily(stravaId, eventId, activityDate);
         }
 
+        console.log(`[Dispatcher] Push — processedEvents: ${JSON.stringify(processedEvents)}, outputs: ${moduleOutputs.length}`);
         // ── Push notification (fire-and-forget) ───────────
         for (const eventId of processedEvents) {
           sendPushNotification(
