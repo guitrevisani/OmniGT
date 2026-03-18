@@ -29,6 +29,7 @@ import { buildDescription } from "./buildDescription.js";
 import { estimateNP }       from "@/lib/physics/estimateNP.js";
 import { estimateFTP }      from "@/lib/physics/estimateFTP.js";
 import { calculateIF }      from "@/lib/physics/estimateIF.js";
+import { calculateTSS }     from "@/lib/physics/calculateTSS.js";
 import { query }            from "@/lib/db";
 
 export const REPROCESS_ON_DELETE = true;
