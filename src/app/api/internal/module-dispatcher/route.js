@@ -151,6 +151,8 @@ const MODULE_REGISTRY = {
         npEstimated:  data.npEstimated,
         ifValue:      data.ifValue,
         ftpEstimated: data.ftpEstimated,
+        tss:          data.tss,
+        campTss:      data.campTss,
       });
     },
   },
@@ -223,7 +225,7 @@ async function sendPushNotification(eventId, eventName, stravaId) {
       body: JSON.stringify({
         app_id:   appId,
         headings: { en: eventName || "OGT Event Engine", pt: eventName || "OGT Event Engine" },
-contents: { en: "New activity processed.", pt: "Nova atividade processada e descrição atualizada." },
+        contents: { en: "New activity processed.", pt: "Nova atividade processada e descrição atualizada." },
         filters:  [
           { field: "tag", key: `event_${slug}`, relation: "=", value: "true" },
           { operator: "AND" },
