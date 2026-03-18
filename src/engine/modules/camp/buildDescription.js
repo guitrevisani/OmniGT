@@ -14,6 +14,7 @@
  * ↑  1.420 m · 3.840 m camp
  * ⏱  3:14 · 8:22 camp
  * IF 0.87 · NP 241W
+ * TSS* 87 · 312
  *
  * Regras:
  * - Linha de sessão omitida se dayNumber ou shortDescription forem null
@@ -58,6 +59,8 @@ function formatInt(value) {
  * @param {boolean} options.npEstimated    true se NP foi estimada via física
  * @param {number}  options.ifValue        Intensity Factor
  * @param {boolean} options.ftpEstimated   true se FTP não foi informado diretamente
+ * @param {number}  options.tss            TSS da atividade atual
+ * @param {number}  options.campTss        TSS acumulado do camp
  * @returns {string}
  */
 export function buildDescription({
@@ -67,6 +70,8 @@ export function buildDescription({
   npEstimated,
   ifValue,
   ftpEstimated,
+  tss,
+  campTss,
 }) {
   const lines = [];
 
@@ -81,17 +86,17 @@ export function buildDescription({
   // ── Linha 3: distância ──────────────────────────────────
   const actKm  = Math.floor(totals.activityDistanceM / 1000);
   const campKm = Math.floor(totals.campDistanceM      / 1000);
-  lines.push(`🚴🏼  ${actKm} km · ${campKm} km camp`);
+  lines.push(`🚴🏼  ${actKm} km · ${campKm} km`);
 
   // ── Linha 4: elevação ───────────────────────────────────
   const actElev  = formatInt(totals.activityElevationM);
   const campElev = formatInt(totals.campElevationM);
-  lines.push(`↑  ${actElev} m · ${campElev} m camp`);
+  lines.push(`↑  ${actElev} m · ${campElev} m`);
 
   // ── Linha 5: tempo ──────────────────────────────────────
   const actTime  = formatTime(totals.activityMovingTimeSec);
   const campTime = formatTime(totals.campMovingTimeSec);
-  lines.push(`⏱  ${actTime} · ${campTime} camp`);
+  lines.push(`⏱  ${actTime} · ${campTime}`);
 
   // ── Linha 6: IF · NP ────────────────────────────────────
   const ifStr = ifValue.toFixed(2);
@@ -99,6 +104,9 @@ export function buildDescription({
   const npStr = Math.round(np);
   const npTag = npEstimated  ? ' (estimado)' : '';
   lines.push(`IF ${ifStr}${ifTag} · NP ${npStr}W${npTag}`);
+
+  // ── Linha 7: TSS ────────────────────────────────────────
+  lines.push(`TSS* ${Math.round(tss)} · ${Math.round(campTss)}`);
 
   return lines.join('\n');
 }

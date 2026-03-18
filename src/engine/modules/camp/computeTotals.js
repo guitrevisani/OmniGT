@@ -97,6 +97,22 @@ export async function computeTotals(context) {
 
   const session = sessionResult.rows[0] || null;
 
+  // ── TSS acumulado do camp até esta atividade ──────────────
+  // Lê o TSS persistido em camp_session_activities para todas
+  // as atividades do atleta no evento até a atual.
+  const campTssResult = await query(
+    `SELECT COALESCE(SUM(csa.tss), 0) AS camp_tss
+     FROM camp_session_activities csa
+     JOIN camp_sessions cs ON cs.id = csa.session_id
+     JOIN activities a ON a.strava_activity_id = csa.strava_activity_id
+     WHERE cs.event_id   = $1
+       AND csa.strava_id = $2
+       AND a.start_date <= (SELECT start_date FROM activities WHERE strava_activity_id = $3)`,
+    [eventId, stravaId, activityId]
+  );
+
+  const campTss = parseFloat(campTssResult.rows[0]?.camp_tss || 0);
+
   return {
     activityDistanceM:     parseFloat(act.distance_m)          || 0,
     activityElevationM:    parseFloat(act.total_elevation_gain) || 0,
@@ -113,5 +129,6 @@ export async function computeTotals(context) {
     dayNumber:        session?.day_number        ?? null,
     sessionOrder:     session?.session_order     ?? null,
     shortDescription: session?.short_description ?? null,
+    campTss,
   };
 }

@@ -99,6 +99,8 @@ async function getStravaPowerZones(stravaId) {
  *   npEstimated:  boolean
  *   ifValue:      number
  *   ftpEstimated: boolean
+ *   tss:          number
+ *   campTss:      number
  * }
  */
 export async function consolidate(context) {
@@ -148,7 +150,32 @@ export async function consolidate(context) {
     ftpMethod,
   });
 
-  return { totals, np, npEstimated, ifValue, ftpEstimated };
+  // ── TSS ──────────────────────────────────────────────────
+  const tss = calculateTSS({
+    movingTimeSec: totals.activityMovingTimeSec,
+    np,
+    ifValue,
+    ftp,
+  });
+
+  // Persistir TSS em camp_session_activities se sessão vinculada
+  if (totals.dayNumber != null) {
+    const sessionResult = await query(
+      `SELECT csa.id FROM camp_session_activities csa
+       JOIN camp_sessions cs ON cs.id = csa.session_id
+       WHERE csa.strava_activity_id = $1 AND cs.event_id = $2`,
+      [activityId, eventId]
+    );
+    if (sessionResult.rows.length > 0) {
+      await query(
+        `UPDATE camp_session_activities SET tss = $1
+         WHERE strava_activity_id = $2`,
+        [tss, activityId]
+      );
+    }
+  }
+
+  return { totals, np, npEstimated, ifValue, ftpEstimated, tss, campTss: totals.campTss };
 }
 
 export { buildDescription };
