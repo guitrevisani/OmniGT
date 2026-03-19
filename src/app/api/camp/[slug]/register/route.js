@@ -178,7 +178,7 @@ export async function POST(request, { params }) {
   // ── Inscrever atleta no evento ────────────────────────
   await query(
     `INSERT INTO athlete_events (strava_id, event_id, role, status)
-     VALUES ($1, $2, 'athlete', 'active')
+     VALUES ($1, $2, 'user', 'active')
      ON CONFLICT (strava_id, event_id) DO NOTHING`,
     [stravaId, eventId]
   );
