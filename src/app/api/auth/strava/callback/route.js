@@ -178,7 +178,8 @@ export async function GET(request) {
     const sessionToken = await createSession(stravaId, eventId, eventEndDate);
 
     // ── 8. Cookie + redirect ──────────────────────────────
-    const response = NextResponse.redirect(new URL(`/${eventSlug}`, request.url));
+    const redirectPath = moduleSlug === 'camp' ? `/${eventSlug}/register` : `/${eventSlug}`;
+    const response = NextResponse.redirect(new URL(redirectPath, request.url));
     response.cookies.set("session", sessionToken, {
       httpOnly: true,
       secure:   process.env.NODE_ENV === "production",
