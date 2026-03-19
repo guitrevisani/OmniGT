@@ -105,8 +105,9 @@ export default function CampRegister({ slug, eventName }) {
         throw new Error(body.error || "Erro ao salvar inscrição");
       }
 
-      const oauthUrl = `/api/auth/strava/start?event=${slug}&push_consent=${pushConsent ? "1" : "0"}`;
-      window.location.href = oauthUrl;
+      /* const oauthUrl = `/api/auth/strava/start?event=${slug}&push_consent=${pushConsent ? "1" : "0"}`;
+      window.location.href = oauthUrl; */
+      window.location.href = `/${slug}/dashboard`;
 
     } catch (err) {
       setError(err.message);
