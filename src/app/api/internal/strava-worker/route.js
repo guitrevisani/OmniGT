@@ -9,18 +9,28 @@ export const maxDuration = 60;
 
 const STRAVA_API = "https://www.strava.com/api/v3";
 
-/**
- * MODULE_REGISTRY (worker)
- *
- * O worker só precisa saber de reprocessOnDelete para o fluxo de DELETE.
- * Todo o restante (consolidate, build, accepted sport types) é
- * responsabilidade do dispatcher.
- */
 const MODULE_REGISTRY = {
   agenda: { reprocessOnDelete: REPROCESS_ON_DELETE },
+  camp:   { reprocessOnDelete: true },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Decide se atividades posteriores devem ser reprocessadas.
+ *
+ * Regras:
+ *   create → sempre reprocessa (atividade nova pode ter inserção fora de ordem)
+ *   update → só reprocessa se `type` mudou (altera accepted_sport_types)
+ *   delete → tratado separadamente antes de chegar aqui
+ */
+function shouldReprocessPosterior(aspectType, webhookUpdates) {
+  if (aspectType === 'create') return true;
+  if (aspectType === 'update') {
+    return webhookUpdates?.type != null;
+  }
+  return false;
+}
 
 async function detectDuplicate(stravaId, startDate, elapsedTime, movingTime, deviceName, currentActivityId) {
   if (!deviceName) return null;
@@ -120,19 +130,6 @@ async function removeFromQueue(activityId) {
 
 // ─── Handler principal ────────────────────────────────────────────────────────
 
-/**
- * POST /api/internal/strava-worker
- *
- * Chamado pelo webhook (fire-and-forget) e/ou por cron.
- * Responsabilidades:
- *   1. Consumir a fila
- *   2. Buscar dados frescos do Strava
- *   3. Persistir activities (start_date_local incluso)
- *   4. Upsert gear
- *   5. Detectar duplicata
- *   6. Chamar dispatcher (await) — que consolida, gera bloco e faz PUT
- *   7. Remover da fila apenas se dispatcher confirmar ok: true
- */
 export async function POST(request) {
   const auth = request.headers.get("authorization") || "";
   if (auth !== `Bearer ${process.env.INTERNAL_WORKER_SECRET}`) {
@@ -163,7 +160,8 @@ export async function POST(request) {
         // ── Buscar activity no banco ────────────────────────
         const actResult = await query(
           `SELECT strava_activity_id, strava_id, start_date, moving_time,
-                  elapsed_time, device_name, gear_id, last_webhook_aspect
+                  elapsed_time, device_name, gear_id,
+                  last_webhook_aspect, last_webhook_updates
            FROM activities
            WHERE strava_activity_id = $1`,
           [activityId]
@@ -204,7 +202,6 @@ export async function POST(request) {
         }
 
         // ── Buscar eventos ativos do atleta ─────────────────
-        // Retorna todos os eventos para upsert em event_activities.
         const eventsResult = await query(
           `SELECT e.id AS event_id
            FROM athlete_events ae
@@ -238,6 +235,23 @@ export async function POST(request) {
 
         const stravaActivity = await stravaRes.json();
 
+        // ── Zonas de FC da atividade ────────────────────────
+        let hrZoneTimes = null;
+        try {
+          const zonesRes = await fetch(`${STRAVA_API}/activities/${activityId}/zones`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (zonesRes.ok) {
+            const zonesData = await zonesRes.json();
+            const hrZone = zonesData.find(z => z.type === "heartrate");
+            if (hrZone?.distribution_buckets?.length) {
+              hrZoneTimes = hrZone.distribution_buckets.map(b => b.time);
+            }
+          }
+        } catch {
+          // não bloqueia o fluxo
+        }
+
         // ── Persistir dados completos no banco ─────────────
         await query(
           `UPDATE activities SET
@@ -254,6 +268,8 @@ export async function POST(request) {
              weighted_average_watts = $12,
              device_watts           = $13,
              strava_route_id        = $14,
+             average_heartrate      = $15,
+             hr_zone_times          = $16,
              updated_at             = NOW()
            WHERE strava_activity_id = $1`,
           [
@@ -271,6 +287,8 @@ export async function POST(request) {
             stravaActivity.weighted_average_watts ?? null,
             stravaActivity.device_watts           ?? null,
             stravaActivity.route_id               || null,
+            stravaActivity.average_heartrate      ?? null,
+            hrZoneTimes ? JSON.stringify(hrZoneTimes) : null,
           ]
         );
 
@@ -300,8 +318,6 @@ export async function POST(request) {
         }
 
         // ── Upsert event_activities ────────────────────────
-        // Garante que a atividade está vinculada a todos os
-        // eventos ativos — necessário para o dispatcher processar.
         for (const event of eventsResult.rows) {
           await query(
             `INSERT INTO event_activities (event_id, strava_activity_id, processed)
@@ -312,38 +328,44 @@ export async function POST(request) {
         }
 
         // ── Reprocessar atividades posteriores ─────────────
-        // Uma atividade inserida fora de ordem cronológica
-        // (CREATE ou UPDATE tardio) distorce os consolidados
-        // de todas as atividades posteriores do atleta no evento.
-        // Marca como não processadas e enfileira para recalcular.
-        for (const event of eventsResult.rows) {
-          await query(
-            `UPDATE event_activities SET processed = false
-             WHERE event_id = $1
-               AND strava_activity_id IN (
-                 SELECT a.strava_activity_id
-                 FROM activities a
-                 WHERE a.strava_id           = $2
-                   AND a.strava_activity_id <> $3
-                   AND a.start_date          > (SELECT start_date FROM activities WHERE strava_activity_id = $3)
-                   AND a.duplicate_of IS NULL
-               )`,
-            [event.event_id, stravaId, activityId]
-          );
+        // create → sempre (atividade pode ter chegado fora de ordem)
+        // update com type mudado → sempre (altera accepted_sport_types)
+        // update de metadados → nunca
+        const reprocess = shouldReprocessPosterior(
+          act.last_webhook_aspect,
+          act.last_webhook_updates
+        );
 
-          await query(
-            `INSERT INTO activity_processing_queue (strava_activity_id, next_run_at)
-             SELECT ea.strava_activity_id, NOW()
-             FROM event_activities ea
-             JOIN activities a ON a.strava_activity_id = ea.strava_activity_id
-             WHERE ea.event_id            = $1
-               AND a.strava_id            = $2
-               AND a.strava_activity_id  <> $3
-               AND a.start_date           > (SELECT start_date FROM activities WHERE strava_activity_id = $3)
-               AND a.duplicate_of IS NULL
-             ON CONFLICT (strava_activity_id) DO UPDATE SET next_run_at = NOW()`,
-            [event.event_id, stravaId, activityId]
-          );
+        if (reprocess) {
+          for (const event of eventsResult.rows) {
+            await query(
+              `UPDATE event_activities SET processed = false
+               WHERE event_id = $1
+                 AND strava_activity_id IN (
+                   SELECT a.strava_activity_id
+                   FROM activities a
+                   WHERE a.strava_id           = $2
+                     AND a.strava_activity_id <> $3
+                     AND a.start_date          > (SELECT start_date FROM activities WHERE strava_activity_id = $3)
+                     AND a.duplicate_of IS NULL
+                 )`,
+              [event.event_id, stravaId, activityId]
+            );
+
+            await query(
+              `INSERT INTO activity_processing_queue (strava_activity_id, next_run_at)
+               SELECT ea.strava_activity_id, NOW()
+               FROM event_activities ea
+               JOIN activities a ON a.strava_activity_id = ea.strava_activity_id
+               WHERE ea.event_id            = $1
+                 AND a.strava_id            = $2
+                 AND a.strava_activity_id  <> $3
+                 AND a.start_date           > (SELECT start_date FROM activities WHERE strava_activity_id = $3)
+                 AND a.duplicate_of IS NULL
+               ON CONFLICT (strava_activity_id) DO UPDATE SET next_run_at = NOW()`,
+              [event.event_id, stravaId, activityId]
+            );
+          }
         }
 
         // ── Chamar dispatcher ───────────────────────────────
@@ -361,7 +383,7 @@ export async function POST(request) {
         if (!dispatchRes.ok || !dispatchData.ok) {
           console.error(`[Worker] Dispatcher falhou para ${activityId}:`, dispatchData);
           errors.push({ activityId, reason: "dispatcher_failed", detail: dispatchData });
-          continue; // mantém na fila para retry
+          continue;
         }
 
         await removeFromQueue(activityId);

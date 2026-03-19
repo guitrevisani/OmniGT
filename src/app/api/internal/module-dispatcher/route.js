@@ -307,8 +307,9 @@ export async function POST(request) {
        WHERE ea.strava_activity_id = $1
          AND ea.processed          = false
          AND e.is_active           = true
-         AND m.is_active           = true`,
-      [activityId]
+         AND m.is_active           = true
+         AND (e.end_date IS NULL OR $2::date <= e.end_date)`,
+      [activityId, activityDate]
     );
 
     if (pendingResult.rows.length === 0) {

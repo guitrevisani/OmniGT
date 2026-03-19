@@ -20,8 +20,10 @@
  *   activityDistanceM:     number
  *   activityElevationM:    number
  *   activityMovingTimeSec: number
- *   weightedAvgWatts:      number | null   NP medido (null = sem sensor)
- *   deviceWatts:           boolean         true = sensor, false = estimado pelo Strava
+ *   weightedAvgWatts:      number | null
+ *   deviceWatts:           boolean
+ *   averageHeartrate:      number | null
+ *   hrZoneTimes:           number[] | null
  *
  *   // Acumulados do camp até esta atividade (inclusive)
  *   campDistanceM:         number
@@ -32,6 +34,9 @@
  *   dayNumber:             int | null
  *   sessionOrder:          int | null
  *   shortDescription:      string | null
+ *
+ * Nota: campTss não é retornado aqui — calculado em index.js
+ * após persistência do TSS da atividade atual.
  * }
  * ============================================================
  */
@@ -48,7 +53,9 @@ export async function computeTotals(context) {
        total_elevation_gain,
        moving_time,
        weighted_average_watts,
-       device_watts
+       device_watts,
+       average_heartrate,
+       hr_zone_times
      FROM activities
      WHERE strava_activity_id = $1`,
     [activityId]
@@ -61,8 +68,6 @@ export async function computeTotals(context) {
   const act = activityResult.rows[0];
 
   // ── Acumulados do camp até esta atividade (inclusive) ─────
-  // Soma apenas atividades vinculadas ao evento com
-  // start_date <= start_date da atividade atual.
   const campResult = await query(
     `SELECT
        COALESCE(SUM(a.distance_m), 0)          AS camp_distance_m,
@@ -82,7 +87,6 @@ export async function computeTotals(context) {
   const camp = campResult.rows[0];
 
   // ── Sessão vinculada ──────────────────────────────────────
-  // Null se o match ainda não foi realizado para esta atividade.
   const sessionResult = await query(
     `SELECT
        cs.day_number,
@@ -97,22 +101,6 @@ export async function computeTotals(context) {
 
   const session = sessionResult.rows[0] || null;
 
-  // ── TSS acumulado do camp até esta atividade ──────────────
-  // Lê o TSS persistido em camp_session_activities para todas
-  // as atividades do atleta no evento até a atual.
-  const campTssResult = await query(
-    `SELECT COALESCE(SUM(csa.tss), 0) AS camp_tss
-     FROM camp_session_activities csa
-     JOIN camp_sessions cs ON cs.id = csa.session_id
-     JOIN activities a ON a.strava_activity_id = csa.strava_activity_id
-     WHERE cs.event_id   = $1
-       AND csa.strava_id = $2
-       AND a.start_date <= (SELECT start_date FROM activities WHERE strava_activity_id = $3)`,
-    [eventId, stravaId, activityId]
-  );
-
-  const campTss = parseFloat(campTssResult.rows[0]?.camp_tss || 0);
-
   return {
     activityDistanceM:     parseFloat(act.distance_m)          || 0,
     activityElevationM:    parseFloat(act.total_elevation_gain) || 0,
@@ -121,6 +109,10 @@ export async function computeTotals(context) {
                              ? parseFloat(act.weighted_average_watts)
                              : null,
     deviceWatts:           act.device_watts === true,
+    averageHeartrate:      act.average_heartrate != null
+                             ? parseFloat(act.average_heartrate)
+                             : null,
+    hrZoneTimes:           act.hr_zone_times ?? null,
 
     campDistanceM:         parseFloat(camp.camp_distance_m)      || 0,
     campElevationM:        parseFloat(camp.camp_elevation_m)     || 0,
@@ -129,6 +121,5 @@ export async function computeTotals(context) {
     dayNumber:        session?.day_number        ?? null,
     sessionOrder:     session?.session_order     ?? null,
     shortDescription: session?.short_description ?? null,
-    campTss,
   };
 }

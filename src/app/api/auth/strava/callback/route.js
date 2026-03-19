@@ -5,28 +5,13 @@ import { createSession } from "@/lib/session";
 
 export const runtime = "nodejs";
 
-/**
- * GET /api/auth/strava/callback
- *
- * Fluxo:
- * 1. Troca o code OAuth por tokens Strava
- * 2. UPSERT atleta em athletes
- * 3. Determina role: provider > owner > user
- * 4. UPSERT em athlete_events (sem downgrade de role superior) + push_consent
- * 5. Metas (módulo agenda):
- *    - keep_goals=1 → verifica se existem metas; se não, redirect /{slug}/register?warn=no_goals
- *    - keep_goals=0 → salva goal_km e goal_hours do formulário
- * 6. Dispara backfill assíncrono (apenas módulo agenda)
- * 7. Cria sessão no banco (token UUID, expires_at = end_date do evento)
- * 8. Cookie session=token + redirect para /{slug}
- */
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const code        = searchParams.get("code");
   const eventSlug   = searchParams.get("state");
   const goalKm      = searchParams.get("goal_km");
   const goalHours   = searchParams.get("goal_hours");
-  const keepGoals   = searchParams.get("keep_goals") !== "0"; // default true
+  const keepGoals   = searchParams.get("keep_goals") !== "0";
   const pushConsent = searchParams.get("push_consent") === "1";
 
   if (!code || !eventSlug) {
@@ -76,14 +61,25 @@ export async function GET(request) {
     const { athlete, access_token, refresh_token, expires_at, scope } = tokenData;
     const stravaId = athlete.id;
 
+    // Mapear sex → gender ('M' → 'masculino', 'F' → 'feminino')
+    const genderFromStrava = athlete.sex === "M"
+      ? "masculino"
+      : athlete.sex === "F"
+        ? "feminino"
+        : null;
+
     // ── 3. UPSERT atleta ──────────────────────────────────
+    // gender e email são persistidos se disponíveis no payload.
+    // Não sobrescrevem valores já informados pelo atleta no formulário
+    // — só preenchem se ainda estiverem null.
     await query(
       `INSERT INTO athletes (
          strava_id, firstname, lastname,
          access_token, refresh_token, expires_at,
-         granted_scopes, updated_at
+         granted_scopes, gender, email,
+         updated_at
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,now())
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now())
        ON CONFLICT (strava_id) DO UPDATE SET
          firstname      = EXCLUDED.firstname,
          lastname       = EXCLUDED.lastname,
@@ -91,9 +87,12 @@ export async function GET(request) {
          refresh_token  = EXCLUDED.refresh_token,
          expires_at     = EXCLUDED.expires_at,
          granted_scopes = EXCLUDED.granted_scopes,
+         gender         = COALESCE(athletes.gender, EXCLUDED.gender),
+         email          = COALESCE(athletes.email,  EXCLUDED.email),
          updated_at     = now()`,
       [stravaId, athlete.firstname, athlete.lastname,
-       access_token, refresh_token, expires_at, scope || null]
+       access_token, refresh_token, expires_at, scope || null,
+       genderFromStrava, athlete.email || null]
     );
 
     // ── 4. Determinar role ────────────────────────────────
@@ -107,7 +106,7 @@ export async function GET(request) {
       role = "user";
     }
 
-    // ── 5. UPSERT athlete_events (sem downgrade) ──────────
+    // ── 5. UPSERT athlete_events ──────────────────────────
     await query(
       `INSERT INTO athlete_events (strava_id, event_id, role, status, push_consent)
        VALUES ($1,$2,$3,'active',$4)
@@ -125,7 +124,6 @@ export async function GET(request) {
     if (moduleSlug === "agenda") {
 
       if (keepGoals) {
-        // Verificar se já existem metas — se não, voltar ao register com aviso
         const existing = await query(
           `SELECT goal_distance_km FROM agenda_goals
            WHERE event_id = $1 AND strava_id = $2`,
@@ -133,7 +131,6 @@ export async function GET(request) {
         );
 
         if (existing.rows.length === 0) {
-          // Criar sessão mesmo assim para não perder o login
           const sessionToken = await createSession(stravaId, eventId, eventEndDate);
           const response = NextResponse.redirect(
             new URL(`/${eventSlug}/register?warn=no_goals`, request.url)
@@ -147,10 +144,8 @@ export async function GET(request) {
           });
           return response;
         }
-        // Metas existentes — não faz nada, mantém o que está no banco
 
       } else {
-        // Salvar metas do formulário
         const parsedGoalKm      = parseFloat(goalKm)    || 0;
         const parsedGoalHours   = parseFloat(goalHours) || 0;
         const goalMovingTimeSec = Math.round(parsedGoalHours * 3600);
@@ -179,7 +174,7 @@ export async function GET(request) {
       }).catch(err => console.error("[Callback] Erro ao disparar backfill:", err));
     }
 
-    // ── 7. Criar sessão no banco ──────────────────────────
+    // ── 7. Criar sessão ───────────────────────────────────
     const sessionToken = await createSession(stravaId, eventId, eventEndDate);
 
     // ── 8. Cookie + redirect ──────────────────────────────

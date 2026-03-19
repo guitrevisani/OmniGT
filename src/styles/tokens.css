@@ -1,0 +1,218 @@
+/**
+ * ============================================================
+ * src/styles/tokens.css
+ * OGT Design Tokens
+ * ============================================================
+ *
+ * Fonte atual: Geist (Next.js built-in)
+ * Fonte futura: substituir --font-display e --font-body
+ * pelas importações do Google Fonts desejadas.
+ *
+ * Uso de tema:
+ *   - Automático: respeita prefers-color-scheme do sistema
+ *   - Manual claro:  <html data-theme="light">
+ *   - Manual escuro: <html data-theme="dark">
+ *
+ * Para adicionar novo tema de área (ex: athlete, admin):
+ *   Criar arquivo theme-{area}.css importando este arquivo
+ *   e sobrescrevendo as variáveis semânticas necessárias.
+ * ============================================================
+ */
+
+/* ── Tipografia ─────────────────────────────────────────── */
+
+:root {
+  /* Fonte atual — Geist via Next.js */
+  --font-display: var(--font-geist-sans), system-ui, sans-serif;
+  --font-body:    var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono:    var(--font-geist-mono), 'Courier New', monospace;
+
+  /*
+   * TODO: substituir pelas importações do Google Fonts quando definido.
+   * Exemplo:
+   * --font-display: 'Nome da Display Font', sans-serif;
+   * --font-body:    'Nome da Body Font', sans-serif;
+   */
+
+  /* Escala tipográfica */
+  --text-xs:   0.75rem;   /* 12px */
+  --text-sm:   0.875rem;  /* 14px */
+  --text-base: 1rem;      /* 16px */
+  --text-lg:   1.125rem;  /* 18px */
+  --text-xl:   1.25rem;   /* 20px */
+  --text-2xl:  1.5rem;    /* 24px */
+  --text-3xl:  1.875rem;  /* 30px */
+
+  /* Pesos */
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --weight-bold:    700;
+
+  /* Line heights */
+  --leading-tight:  1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.75;
+}
+
+/* ── Paleta base — marca OGT ────────────────────────────── */
+/*
+ * Cores provisórias — substituir quando identidade visual estiver definida.
+ * Organização: primitivos (valores absolutos) → semânticos (uso contextual).
+ */
+
+:root {
+  /* Primitivos */
+  --color-black:     #0a0a0a;
+  --color-white:     #ffffff;
+
+  --color-slate-950: #020617;
+  --color-slate-900: #0f172a;
+  --color-slate-800: #1e293b;
+  --color-slate-700: #334155;
+  --color-slate-600: #475569;
+  --color-slate-500: #64748b;
+  --color-slate-400: #94a3b8;
+  --color-slate-300: #cbd5e1;
+  --color-slate-200: #e2e8f0;
+  --color-slate-100: #f1f5f9;
+  --color-slate-50:  #f8fafc;
+
+  /* Accent — azul OGT provisório */
+  --color-accent-950: #0a1628;
+  --color-accent-900: #0f2040;
+  --color-accent-800: #1a3a6e;
+  --color-accent-700: #1e4d99;
+  --color-accent-600: #1d6abf;
+  --color-accent-500: #2183e0;
+  --color-accent-400: #4da3f5;
+  --color-accent-300: #7ec0fa;
+  --color-accent-200: #bde0fd;
+  --color-accent-100: #e0f2fe;
+  --color-accent-50:  #f0f9ff;
+
+  /* Semânticos — estado */
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error:   #ef4444;
+  --color-info:    #3b82f6;
+}
+
+/* ── Espaçamento ────────────────────────────────────────── */
+
+:root {
+  --space-1:  0.25rem;  /* 4px  */
+  --space-2:  0.5rem;   /* 8px  */
+  --space-3:  0.75rem;  /* 12px */
+  --space-4:  1rem;     /* 16px */
+  --space-5:  1.25rem;  /* 20px */
+  --space-6:  1.5rem;   /* 24px */
+  --space-8:  2rem;     /* 32px */
+  --space-10: 2.5rem;   /* 40px */
+  --space-12: 3rem;     /* 48px */
+  --space-16: 4rem;     /* 64px */
+}
+
+/* ── Border radius ──────────────────────────────────────── */
+
+:root {
+  --radius-sm:   0.25rem;  /* 4px  */
+  --radius-md:   0.5rem;   /* 8px  */
+  --radius-lg:   0.75rem;  /* 12px */
+  --radius-xl:   1rem;     /* 16px */
+  --radius-full: 9999px;
+}
+
+/* ── Sombras ────────────────────────────────────────────── */
+
+:root {
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+/* ── Breakpoints (referência — usar em JS/media queries) ── */
+/*
+  --bp-sm:  640px
+  --bp-md:  768px
+  --bp-lg:  1024px
+  --bp-xl:  1280px
+  --bp-2xl: 1536px
+*/
+
+/* ── Transições ─────────────────────────────────────────── */
+
+:root {
+  --transition-fast:   150ms ease;
+  --transition-normal: 250ms ease;
+  --transition-slow:   400ms ease;
+}
+
+/* ── Tema claro (padrão) ────────────────────────────────── */
+
+:root,
+[data-theme="light"] {
+  --bg-primary:   var(--color-white);
+  --bg-secondary: var(--color-slate-50);
+  --bg-tertiary:  var(--color-slate-100);
+  --bg-inverse:   var(--color-slate-900);
+
+  --text-primary:   var(--color-slate-900);
+  --text-secondary: var(--color-slate-600);
+  --text-tertiary:  var(--color-slate-400);
+  --text-inverse:   var(--color-white);
+
+  --border-subtle:  var(--color-slate-200);
+  --border-default: var(--color-slate-300);
+  --border-strong:  var(--color-slate-400);
+
+  --accent:       var(--color-accent-600);
+  --accent-hover: var(--color-accent-700);
+  --accent-subtle: var(--color-accent-50);
+  --accent-text:  var(--color-accent-700);
+}
+
+/* ── Tema escuro ────────────────────────────────────────── */
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-primary:   var(--color-slate-900);
+    --bg-secondary: var(--color-slate-800);
+    --bg-tertiary:  var(--color-slate-700);
+    --bg-inverse:   var(--color-white);
+
+    --text-primary:   var(--color-slate-50);
+    --text-secondary: var(--color-slate-400);
+    --text-tertiary:  var(--color-slate-500);
+    --text-inverse:   var(--color-slate-900);
+
+    --border-subtle:  var(--color-slate-700);
+    --border-default: var(--color-slate-600);
+    --border-strong:  var(--color-slate-500);
+
+    --accent:        var(--color-accent-400);
+    --accent-hover:  var(--color-accent-300);
+    --accent-subtle: var(--color-accent-950);
+    --accent-text:   var(--color-accent-300);
+  }
+}
+
+[data-theme="dark"] {
+  --bg-primary:   var(--color-slate-900);
+  --bg-secondary: var(--color-slate-800);
+  --bg-tertiary:  var(--color-slate-700);
+  --bg-inverse:   var(--color-white);
+
+  --text-primary:   var(--color-slate-50);
+  --text-secondary: var(--color-slate-400);
+  --text-tertiary:  var(--color-slate-500);
+  --text-inverse:   var(--color-slate-900);
+
+  --border-subtle:  var(--color-slate-700);
+  --border-default: var(--color-slate-600);
+  --border-strong:  var(--color-slate-500);
+
+  --accent:        var(--color-accent-400);
+  --accent-hover:  var(--color-accent-300);
+  --accent-subtle: var(--color-accent-950);
+  --accent-text:   var(--color-accent-300);
+}

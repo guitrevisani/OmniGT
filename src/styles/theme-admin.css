@@ -1,0 +1,370 @@
+/**
+ * ============================================================
+ * src/styles/theme-admin.css
+ * OGT — Tema Área Owner/Admin
+ * ============================================================
+ *
+ * Contexto de uso: desktop-first, densidade de informação,
+ * análise e configuração. Prioridade: tabelas, gráficos,
+ * navegação lateral, ações rápidas.
+ *
+ * Importar tokens.css antes deste arquivo.
+ * ============================================================
+ */
+
+@import "./tokens.css";
+
+/* ── Variáveis específicas da área admin ────────────────── */
+
+:root {
+  --admin-sidebar-width:     240px;
+  --admin-sidebar-collapsed: 64px;
+  --admin-header-height:     56px;
+  --admin-content-max:       1280px;
+
+  /* Tabelas */
+  --admin-table-row-height: 48px;
+
+  /* Card analítico */
+  --admin-card-radius:  var(--radius-lg);
+  --admin-card-padding: var(--space-5);
+}
+
+/* ── Reset base ─────────────────────────────────────────── */
+
+body.admin-area {
+  background-color: var(--bg-secondary);
+  color:            var(--text-primary);
+  font-family:      var(--font-body);
+  font-size:        var(--text-sm);
+  line-height:      var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+  padding: 0;
+  min-height: 100dvh;
+}
+
+/* ── Layout sidebar + conteúdo ──────────────────────────── */
+
+.admin-layout {
+  display: flex;
+  min-height: 100dvh;
+}
+
+/* ── Sidebar ────────────────────────────────────────────── */
+
+.admin-sidebar {
+  width:      var(--admin-sidebar-width);
+  flex-shrink: 0;
+  background-color: var(--bg-primary);
+  border-right: 1px solid var(--border-subtle);
+  display:    flex;
+  flex-direction: column;
+  position:   sticky;
+  top: 0;
+  height: 100dvh;
+  overflow-y: auto;
+}
+
+.admin-sidebar__logo {
+  padding:     var(--space-5) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size:   var(--text-base);
+  font-weight: var(--weight-bold);
+  color:       var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.admin-sidebar__event {
+  font-size:  var(--text-xs);
+  color:      var(--text-secondary);
+  font-weight: var(--weight-regular);
+  display:    block;
+  margin-top: var(--space-1);
+}
+
+.admin-nav {
+  padding: var(--space-3) var(--space-2);
+  flex: 1;
+}
+
+.admin-nav__section {
+  margin-bottom: var(--space-4);
+}
+
+.admin-nav__label {
+  font-size:     var(--text-xs);
+  color:         var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding:       0 var(--space-2);
+  margin-bottom: var(--space-2);
+  display:       block;
+}
+
+.admin-nav__item {
+  display:         flex;
+  align-items:     center;
+  gap:             var(--space-3);
+  padding:         var(--space-2) var(--space-3);
+  border-radius:   var(--radius-md);
+  color:           var(--text-secondary);
+  font-size:       var(--text-sm);
+  text-decoration: none;
+  transition:      background-color var(--transition-fast),
+                   color var(--transition-fast);
+  cursor:          pointer;
+  border:          none;
+  background:      none;
+  width:           100%;
+  text-align:      left;
+}
+
+.admin-nav__item:hover {
+  background-color: var(--bg-tertiary);
+  color:            var(--text-primary);
+}
+
+.admin-nav__item--active {
+  background-color: var(--accent-subtle);
+  color:            var(--accent-text);
+  font-weight:      var(--weight-medium);
+}
+
+/* ── Área principal ─────────────────────────────────────── */
+
+.admin-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.admin-header {
+  height:           var(--admin-header-height);
+  background-color: var(--bg-primary);
+  border-bottom:    1px solid var(--border-subtle);
+  display:          flex;
+  align-items:      center;
+  justify-content:  space-between;
+  padding:          0 var(--space-6);
+  position:         sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.admin-header__title {
+  font-size:   var(--text-lg);
+  font-weight: var(--weight-medium);
+  color:       var(--text-primary);
+  margin: 0;
+}
+
+.admin-content {
+  padding:   var(--space-6);
+  max-width: var(--admin-content-max);
+  width:     100%;
+}
+
+/* ── Cards analíticos ───────────────────────────────────── */
+
+.admin-card {
+  background-color: var(--bg-primary);
+  border-radius:    var(--admin-card-radius);
+  border:           1px solid var(--border-subtle);
+  padding:          var(--admin-card-padding);
+}
+
+.admin-card__header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  margin-bottom:   var(--space-4);
+}
+
+.admin-card__title {
+  font-size:   var(--text-sm);
+  font-weight: var(--weight-medium);
+  color:       var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0;
+}
+
+/* ── Grade de KPIs ──────────────────────────────────────── */
+
+.admin-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.admin-kpi {
+  background-color: var(--bg-primary);
+  border-radius:    var(--admin-card-radius);
+  border:           1px solid var(--border-subtle);
+  padding:          var(--space-4) var(--space-5);
+}
+
+.admin-kpi__label {
+  font-size:      var(--text-xs);
+  color:          var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom:  var(--space-2);
+}
+
+.admin-kpi__value {
+  font-size:   var(--text-2xl);
+  font-weight: var(--weight-bold);
+  color:       var(--text-primary);
+  line-height: var(--leading-tight);
+}
+
+.admin-kpi__delta {
+  font-size:   var(--text-xs);
+  color:       var(--text-tertiary);
+  margin-top:  var(--space-1);
+}
+
+/* ── Tabela ─────────────────────────────────────────────── */
+
+.admin-table-wrapper {
+  overflow-x: auto;
+  border-radius: var(--admin-card-radius);
+  border: 1px solid var(--border-subtle);
+}
+
+.admin-table {
+  width:           100%;
+  border-collapse: collapse;
+  font-size:       var(--text-sm);
+}
+
+.admin-table thead {
+  background-color: var(--bg-secondary);
+  border-bottom:    1px solid var(--border-subtle);
+}
+
+.admin-table th {
+  padding:        var(--space-3) var(--space-4);
+  text-align:     left;
+  font-size:      var(--text-xs);
+  font-weight:    var(--weight-medium);
+  color:          var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space:    nowrap;
+}
+
+.admin-table td {
+  padding:       var(--space-3) var(--space-4);
+  color:         var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table tbody tr:hover td {
+  background-color: var(--bg-secondary);
+}
+
+/* ── Barra de progresso ─────────────────────────────────── */
+
+.admin-progress {
+  height:           6px;
+  background-color: var(--bg-tertiary);
+  border-radius:    var(--radius-full);
+  overflow:         hidden;
+}
+
+.admin-progress__fill {
+  height:           100%;
+  background-color: var(--accent);
+  border-radius:    var(--radius-full);
+  transition:       width var(--transition-slow);
+}
+
+.admin-progress__fill--success { background-color: var(--color-success); }
+.admin-progress__fill--warning { background-color: var(--color-warning); }
+.admin-progress__fill--error   { background-color: var(--color-error);   }
+
+/* ── Botões ─────────────────────────────────────────────── */
+
+.btn-primary {
+  display:          inline-flex;
+  align-items:      center;
+  gap:              var(--space-2);
+  padding:          var(--space-2) var(--space-4);
+  background-color: var(--accent);
+  color:            var(--color-white);
+  font-family:      var(--font-body);
+  font-size:        var(--text-sm);
+  font-weight:      var(--weight-medium);
+  border:           none;
+  border-radius:    var(--radius-md);
+  cursor:           pointer;
+  text-decoration:  none;
+  transition:       background-color var(--transition-fast);
+}
+
+.btn-primary:hover {
+  background-color: var(--accent-hover);
+}
+
+.btn-ghost {
+  display:          inline-flex;
+  align-items:      center;
+  gap:              var(--space-2);
+  padding:          var(--space-2) var(--space-4);
+  background-color: transparent;
+  color:            var(--text-secondary);
+  font-family:      var(--font-body);
+  font-size:        var(--text-sm);
+  font-weight:      var(--weight-medium);
+  border:           1px solid var(--border-default);
+  border-radius:    var(--radius-md);
+  cursor:           pointer;
+  text-decoration:  none;
+  transition:       all var(--transition-fast);
+}
+
+.btn-ghost:hover {
+  background-color: var(--bg-tertiary);
+  color:            var(--text-primary);
+}
+
+/* ── Toggle de tema ─────────────────────────────────────── */
+
+.theme-toggle {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-1);
+  background:  var(--bg-tertiary);
+  border:      1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  padding:     var(--space-1);
+}
+
+.theme-toggle__btn {
+  padding:       var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  font-size:     var(--text-xs);
+  font-weight:   var(--weight-medium);
+  border:        none;
+  cursor:        pointer;
+  transition:    background-color var(--transition-fast),
+                 color var(--transition-fast);
+  background:    transparent;
+  color:         var(--text-secondary);
+}
+
+.theme-toggle__btn--active {
+  background-color: var(--bg-primary);
+  color:            var(--text-primary);
+  box-shadow:       var(--shadow-sm);
+}

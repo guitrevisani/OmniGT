@@ -1,0 +1,244 @@
+/*
+ * src/app/[slug]/CampPresentation.module.css
+ * Estilos da apresentação pública do Camp.
+ * Mobile-first. Usa variáveis de tokens.css.
+ */
+
+.page {
+  min-height:       100dvh;
+  background-color: var(--bg-secondary);
+  display:          flex;
+  flex-direction:   column;
+}
+
+/* ── Hero ───────────────────────────────────────────────── */
+
+.hero {
+  position:         relative;
+  background-color: var(--color-slate-950);
+  color:            var(--color-white);
+  overflow:         hidden;
+  padding:          4rem var(--space-5) 3rem;
+  min-height:       52dvh;
+  display:          flex;
+  align-items:      flex-end;
+}
+
+.heroGradient {
+  position:   absolute;
+  inset:      0;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-accent-700) 30%, transparent) 0%,
+    transparent 60%
+  );
+  pointer-events: none;
+}
+
+.hero::before {
+  content:    "";
+  position:   absolute;
+  inset:      0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.heroInner {
+  position:  relative;
+  z-index:   1;
+  width:     100%;
+  max-width: 640px;
+  animation: fadeUp 0.6s ease both;
+}
+
+.heroBadge {
+  display:        inline-flex;
+  align-items:    center;
+  gap:            var(--space-2);
+  font-size:      var(--text-xs);
+  font-weight:    var(--weight-medium);
+  color:          var(--color-accent-300);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom:  var(--space-4);
+}
+
+.heroBadgeDot {
+  width:            6px;
+  height:           6px;
+  border-radius:    var(--radius-full);
+  background-color: var(--color-accent-400);
+  animation:        pulse 2s ease infinite;
+}
+
+.heroTitle {
+  font-family:     var(--font-display);
+  font-size:       clamp(2rem, 8vw, 3.5rem);
+  font-weight:     var(--weight-bold);
+  line-height:     var(--leading-tight);
+  color:           var(--color-white);
+  margin:          0 0 var(--space-5);
+  letter-spacing:  -0.02em;
+}
+
+.heroMeta {
+  display:   flex;
+  flex-wrap: wrap;
+  gap:       var(--space-3) var(--space-5);
+}
+
+.heroMetaItem {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-2);
+  font-size:   var(--text-sm);
+  color:       var(--color-slate-300);
+}
+
+.countdown {
+  display:     flex;
+  align-items: baseline;
+  gap:         var(--space-2);
+  margin-top:  var(--space-6);
+  padding-top: var(--space-5);
+  border-top:  1px solid color-mix(in srgb, var(--color-white) 12%, transparent);
+}
+
+.countdownValue {
+  font-family:     var(--font-display);
+  font-size:       clamp(2.5rem, 10vw, 4rem);
+  font-weight:     var(--weight-bold);
+  color:           var(--color-accent-400);
+  line-height:     1;
+  letter-spacing:  -0.03em;
+}
+
+.countdownLabel {
+  font-size:   var(--text-sm);
+  color:       var(--color-slate-400);
+  max-width:   80px;
+  line-height: var(--leading-tight);
+}
+
+/* ── Body ───────────────────────────────────────────────── */
+
+.body {
+  flex:           1;
+  padding:        var(--space-6) var(--space-5);
+  max-width:      640px;
+  width:          100%;
+  margin:         0 auto;
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-6);
+}
+
+.section {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-3);
+}
+
+.sectionTitle {
+  font-size:      var(--text-xs);
+  font-weight:    var(--weight-medium);
+  color:          var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 0;
+}
+
+.sectionText {
+  font-size:   var(--text-base);
+  color:       var(--text-primary);
+  line-height: var(--leading-relaxed);
+  margin:      0;
+}
+
+.externalLink {
+  display:         inline-flex;
+  align-items:     center;
+  gap:             var(--space-2);
+  font-size:       var(--text-sm);
+  font-weight:     var(--weight-medium);
+  color:           var(--accent);
+  text-decoration: none;
+  transition:      color var(--transition-fast);
+}
+
+.externalLink:hover {
+  color: var(--accent-hover);
+}
+
+/* ── CTA ────────────────────────────────────────────────── */
+
+.cta {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-4);
+  padding-top:    var(--space-2);
+}
+
+.ctaText {
+  font-size:   var(--text-sm);
+  color:       var(--text-secondary);
+  line-height: var(--leading-relaxed);
+  margin:      0;
+}
+
+.ctaButton {
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  gap:             var(--space-3);
+  padding:         var(--space-4) var(--space-6);
+  background-color: #fc4c02;
+  color:           var(--color-white);
+  font-family:     var(--font-body);
+  font-size:       var(--text-base);
+  font-weight:     var(--weight-medium);
+  border-radius:   var(--radius-lg);
+  text-decoration: none;
+  transition:      background-color var(--transition-fast),
+                   transform var(--transition-fast);
+  letter-spacing:  -0.01em;
+}
+
+.ctaButton:hover {
+  background-color: #e04400;
+  transform: translateY(-1px);
+}
+
+.ctaButton:active {
+  transform: translateY(0);
+}
+
+.footer {
+  font-size:      var(--text-xs);
+  color:          var(--text-tertiary);
+  text-align:     center;
+  padding-bottom: var(--space-4);
+}
+
+/* ── Animações ──────────────────────────────────────────── */
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+@media (min-width: 768px) {
+  .hero {
+    padding:    5rem var(--space-8) 4rem;
+    min-height: 60dvh;
+  }
+  .body {
+    padding: var(--space-8);
+  }
+}

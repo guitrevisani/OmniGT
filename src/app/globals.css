@@ -1,5 +1,7 @@
 /* provider.css - cores e estilos base do dashboard PROVIDER */
 
+@import "../styles/tokens.css";
+
 :root {
   --provider-bg: #0d1b2a;
   --provider-fg: #e0e0e0;
