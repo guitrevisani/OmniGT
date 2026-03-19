@@ -89,7 +89,6 @@ export async function GET(request, { params }) {
        cs.day_number,
        cs.session_order,
        cs.short_description,
-       TO_CHAR(cs.scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
        a.distance_m,
        a.total_elevation_gain,
        a.moving_time,
