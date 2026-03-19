@@ -1,20 +1,19 @@
-// /src/app/[slug]/dashboard/page.js
-import { redirect } from "next/navigation";
-import { query } from "@/lib/db";
-import { getSession } from "@/lib/session";
-import AgendaDashboard from "./AgendaDashboard";
+// src/app/[slug]/dashboard/page.js
+import { redirect }       from "next/navigation";
+import { query }          from "@/lib/db";
+import { getSession }     from "@/lib/session";
+import AgendaDashboard    from "./AgendaDashboard";
 import EstimatorDashboard from "./EstimatorDashboard";
+import CampDashboard      from "./CampDashboard";
+
+export const runtime = "nodejs";
 
 const MODULE_COMPONENTS = {
   agenda:    AgendaDashboard,
   estimator: EstimatorDashboard,
+  camp:      CampDashboard,
 };
 
-/**
- * Dispatcher server component.
- * Determina qual módulo renderizar com base no slug do módulo
- * vinculado ao evento.
- */
 export default async function DashboardPage({ params }) {
   const { slug } = await params;
 
