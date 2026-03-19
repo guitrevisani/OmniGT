@@ -62,6 +62,7 @@ export default async function EventIndexPage({ params }) {
 
   // Demais módulos com registro → redireciona conforme sessão
   const session = await getSession();
+  console.log("[page.js camp] session:", JSON.stringify(session));
   if (!session) redirect(`/${slug}/register`);
   if (session.eventId !== event.id) redirect(`/${slug}/register`);
 
