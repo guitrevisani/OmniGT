@@ -61,7 +61,7 @@ export async function GET(request) {
     const { athlete, access_token, refresh_token, expires_at, scope } = tokenData;
     const stravaId = athlete.id;
 
-    // Mapear sex → gender ('M' → 'masculino', 'F' → 'feminino')
+    // Mapear sex → gender
     const genderFromStrava = athlete.sex === "M"
       ? "masculino"
       : athlete.sex === "F"
@@ -69,9 +69,7 @@ export async function GET(request) {
         : null;
 
     // ── 3. UPSERT atleta ──────────────────────────────────
-    // gender e email são persistidos se disponíveis no payload.
-    // Não sobrescrevem valores já informados pelo atleta no formulário
-    // — só preenchem se ainda estiverem null.
+    // gender e email não sobrescrevem valores já informados pelo atleta
     await query(
       `INSERT INTO athletes (
          strava_id, firstname, lastname,
@@ -174,11 +172,24 @@ export async function GET(request) {
       }).catch(err => console.error("[Callback] Erro ao disparar backfill:", err));
     }
 
-    // ── 7. Criar sessão ───────────────────────────────────
+    // ── 7. Criar sessão no banco ──────────────────────────
     const sessionToken = await createSession(stravaId, eventId, eventEndDate);
 
     // ── 8. Cookie + redirect ──────────────────────────────
-    const redirectPath = moduleSlug === 'camp' ? `/${eventSlug}/register` : `/${eventSlug}`;
+    // Camp: já tem perfil preenchido → dashboard, caso contrário → formulário
+    // Demais módulos → apresentação (/{slug}) que trata o redirect internamente
+    let redirectPath = `/${eventSlug}`;
+    if (moduleSlug === "camp") {
+      const profile = await query(
+        `SELECT id FROM camp_athlete_profiles
+         WHERE strava_id = $1 AND event_id = $2`,
+        [stravaId, eventId]
+      );
+      redirectPath = profile.rows.length > 0
+        ? `/${eventSlug}/dashboard`
+        : `/${eventSlug}/register`;
+    }
+
     const response = NextResponse.redirect(new URL(redirectPath, request.url));
     response.cookies.set("session", sessionToken, {
       httpOnly: true,
