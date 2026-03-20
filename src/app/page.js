@@ -12,8 +12,8 @@ export default async function LandingPage() {
   }
 
   return (
-    <main style={styles.main}
-      
+    <main style={styles.main}>
+      <a 
         href="https://www.treine.com.gt"
         target="_blank"
         rel="noopener noreferrer"
