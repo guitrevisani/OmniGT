@@ -3,11 +3,16 @@
 
 import { useState, useEffect } from "react";
 
-function fmtKm(m)   { return Math.floor(m / 1000) + " km"; }
-function fmtElev(m) { return Math.round(m).toLocaleString("pt-BR") + " m"; }
-function fmtTime(s) {
+function fmtKm(m)    { return Math.floor(m / 1000) + " km"; }
+function fmtElev(m)  { return Math.round(m).toLocaleString("pt-BR") + " m"; }
+function fmtTime(s)  {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}` : `${m}min`;
+}
+function fmtDate(str) {
+  if (!str) return "—";
+  const [y, m, d] = str.split("-");
+  return `${d}/${m}/${y}`;
 }
 
 const S = {
@@ -60,7 +65,7 @@ export default function CampDashboard({ slug }) {
       <div style={S.header}>
         <h1 style={S.title}>{name}</h1>
         {location && <p style={S.subtitle}>{location}</p>}
-        <p style={S.subtitle}>{start_date} → {end_date}</p>
+        <p style={S.subtitle}>{fmtDate(start_date)} → {fmtDate(end_date)}</p>
       </div>
 
       {/* ── Acumulados ─────────────────────────────────── */}
@@ -128,7 +133,7 @@ export default function CampDashboard({ slug }) {
           <div style={S.grid}>
             <div style={S.card}>
               <span style={S.cardLabel}>Data</span>
-              <span style={{ ...S.cardValue, fontSize: "1rem" }}>{lastActivity.date}</span>
+              <span style={{ ...S.cardValue, fontSize: "1rem" }}>{fmtDate(lastActivity.date)}</span>
             </div>
             <div style={S.card}>
               <span style={S.cardLabel}>Distância</span>
