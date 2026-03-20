@@ -59,7 +59,7 @@ export async function createSession(stravaId, eventId, eventEndDate) {
   await query(
     `INSERT INTO sessions (token, strava_id, event_id, expires_at)
      VALUES ($1, $2, $3, $4)`,
-    [token, stravaId, eventId, eventEndDate]
+    [token, stravaId, eventId, new Date(new Date(eventEndDate).setHours(23, 59, 59, 999))]
   );
 
   return token;
