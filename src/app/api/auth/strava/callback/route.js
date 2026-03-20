@@ -130,6 +130,8 @@ export async function GET(request) {
 
         if (existing.rows.length === 0) {
           const sessionToken = await createSession(stravaId, eventId, eventEndDate);
+          console.log("[Callback] eventEndDate:", eventEndDate, typeof eventEndDate);
+          console.log("[Callback] sessionToken:", sessionToken);
           const response = NextResponse.redirect(
             new URL(`/${eventSlug}/register?warn=no_goals`, request.url)
           );
