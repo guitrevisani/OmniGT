@@ -14,16 +14,6 @@ const MODULE_REGISTRY = {
   camp:   { reprocessOnDelete: true },
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Decide se atividades posteriores devem ser reprocessadas.
- *
- * Regras:
- *   create → sempre reprocessa (atividade nova pode ter inserção fora de ordem)
- *   update → só reprocessa se `type` mudou (altera accepted_sport_types)
- *   delete → tratado separadamente antes de chegar aqui
- */
 function shouldReprocessPosterior(aspectType, webhookUpdates) {
   if (aspectType === 'create') return true;
   if (aspectType === 'update') {
@@ -128,8 +118,6 @@ async function removeFromQueue(activityId) {
   );
 }
 
-// ─── Handler principal ────────────────────────────────────────────────────────
-
 export async function POST(request) {
   const auth = request.headers.get("authorization") || "";
   if (auth !== `Bearer ${process.env.INTERNAL_WORKER_SECRET}`) {
@@ -157,7 +145,6 @@ export async function POST(request) {
       const activityId = row.strava_activity_id;
 
       try {
-        // ── Buscar activity no banco ────────────────────────
         const actResult = await query(
           `SELECT strava_activity_id, strava_id, start_date, moving_time,
                   elapsed_time, device_name, gear_id,
@@ -175,7 +162,6 @@ export async function POST(request) {
         const act      = actResult.rows[0];
         const stravaId = act.strava_id;
 
-        // ── DELETE ──────────────────────────────────────────
         if (act.last_webhook_aspect === "delete") {
           const eventsResult = await query(
             `SELECT e.id AS event_id, m.slug AS module_slug
@@ -201,7 +187,9 @@ export async function POST(request) {
           continue;
         }
 
-        // ── Buscar eventos ativos do atleta ─────────────────
+        // ── Buscar eventos ativos do atleta dentro do período ─
+        // Filtra por start_date e end_date do evento para evitar
+        // vincular atividades fora do período em event_activities.
         const eventsResult = await query(
           `SELECT e.id AS event_id
            FROM athlete_events ae
@@ -210,8 +198,10 @@ export async function POST(request) {
            WHERE ae.strava_id = $1
              AND ae.status   = 'active'
              AND e.is_active = true
-             AND m.is_active = true`,
-          [stravaId]
+             AND m.is_active = true
+             AND (SELECT start_date FROM activities WHERE strava_activity_id = $2)
+                 BETWEEN e.start_date AND e.end_date`,
+          [stravaId, activityId]
         );
 
         if (eventsResult.rows.length === 0) {
@@ -220,10 +210,8 @@ export async function POST(request) {
           continue;
         }
 
-        // ── Token válido ────────────────────────────────────
         const token = await getValidAccessToken(stravaId);
 
-        // ── Dados frescos do Strava ─────────────────────────
         const stravaRes = await fetch(`${STRAVA_API}/activities/${activityId}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -252,6 +240,23 @@ export async function POST(request) {
           // não bloqueia o fluxo
         }
 
+        // ── Stream de FC segundo a segundo ──────────────────
+        let hrStream = null;
+        try {
+          const streamRes = await fetch(
+            `${STRAVA_API}/activities/${activityId}/streams?keys=heartrate&key_by_type=true`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (streamRes.ok) {
+            const streamData = await streamRes.json();
+            if (streamData?.heartrate?.data?.length) {
+              hrStream = streamData.heartrate.data;
+            }
+          }
+        } catch {
+          // não bloqueia o fluxo
+        }
+
         // ── Persistir dados completos no banco ─────────────
         await query(
           `UPDATE activities SET
@@ -270,6 +275,8 @@ export async function POST(request) {
              strava_route_id        = $14,
              average_heartrate      = $15,
              hr_zone_times          = $16,
+             hr_stream              = $17,
+             title                  = $18,
              updated_at             = NOW()
            WHERE strava_activity_id = $1`,
           [
@@ -289,15 +296,15 @@ export async function POST(request) {
             stravaActivity.route_id               || null,
             stravaActivity.average_heartrate      ?? null,
             hrZoneTimes ? JSON.stringify(hrZoneTimes) : null,
+            hrStream    ? JSON.stringify(hrStream)    : null,
+            stravaActivity.name                   || null,
           ]
         );
 
-        // ── Upsert gear ─────────────────────────────────────
         if (stravaActivity.gear_id) {
           await upsertGear(stravaActivity.gear_id, stravaId, token);
         }
 
-        // ── Detecção de duplicata ───────────────────────────
         const duplicateOf = await detectDuplicate(
           stravaId,
           stravaActivity.start_date,
@@ -317,7 +324,6 @@ export async function POST(request) {
           continue;
         }
 
-        // ── Upsert event_activities ────────────────────────
         for (const event of eventsResult.rows) {
           await query(
             `INSERT INTO event_activities (event_id, strava_activity_id, processed)
@@ -327,10 +333,6 @@ export async function POST(request) {
           );
         }
 
-        // ── Reprocessar atividades posteriores ─────────────
-        // create → sempre (atividade pode ter chegado fora de ordem)
-        // update com type mudado → sempre (altera accepted_sport_types)
-        // update de metadados → nunca
         const reprocess = shouldReprocessPosterior(
           act.last_webhook_aspect,
           act.last_webhook_updates
@@ -368,7 +370,6 @@ export async function POST(request) {
           }
         }
 
-        // ── Chamar dispatcher ───────────────────────────────
         const dispatchRes = await fetch(`${base}/api/internal/module-dispatcher`, {
           method:  "POST",
           headers: {
