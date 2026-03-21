@@ -364,7 +364,7 @@ export async function POST(request) {
         eventName:      row.event_name,
         eventStartDate: row.event_start_date,
         eventEndDate:   row.event_end_date,
-        startDateLocal: activityDate,
+        startDateLocal: (actResult.rows[0].start_date_local || actResult.rows[0].start_date).toISOString().replace('T', ' ').slice(0, 19),
       };
 
       try {
