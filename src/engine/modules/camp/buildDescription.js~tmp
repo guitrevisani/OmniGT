@@ -73,7 +73,6 @@ export function buildDescription({
   tss,
   campTss,
 }) {
-  if (totals.dayNumber == null) return null;
   const lines = [];
 
   // ── Linha 1: nome do camp ───────────────────────────────
