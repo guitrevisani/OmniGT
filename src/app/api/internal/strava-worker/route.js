@@ -118,6 +118,26 @@ async function removeFromQueue(activityId) {
   );
 }
 
+/**
+ * Atualiza hr_min em athletes se o mínimo do stream for menor
+ * que o valor atualmente persistido.
+ * Usa o stream quando disponível — average_heartrate é média, não mínima.
+ */
+async function updateHrMin(stravaId, hrStream) {
+  if (!hrStream?.length) return;
+
+  const hrMinActivity = Math.min(...hrStream);
+  if (!hrMinActivity || hrMinActivity <= 0) return;
+
+  await query(
+    `UPDATE athletes
+     SET hr_min = $2
+     WHERE strava_id = $1
+       AND (hr_min IS NULL OR hr_min > $2)`,
+    [stravaId, hrMinActivity]
+  );
+}
+
 export async function POST(request) {
   const auth = request.headers.get("authorization") || "";
   if (auth !== `Bearer ${process.env.INTERNAL_WORKER_SECRET}`) {
@@ -187,9 +207,6 @@ export async function POST(request) {
           continue;
         }
 
-        // ── Buscar eventos ativos do atleta dentro do período ─
-        // Filtra por start_date e end_date do evento para evitar
-        // vincular atividades fora do período em event_activities.
         const eventsResult = await query(
           `SELECT e.id AS event_id
            FROM athlete_events ae
@@ -300,6 +317,10 @@ export async function POST(request) {
             stravaActivity.name                   || null,
           ]
         );
+
+        // ── Atualizar hr_min do atleta ──────────────────────
+        // Atualiza apenas se o mínimo do stream for menor que o persistido.
+        await updateHrMin(stravaId, hrStream);
 
         if (stravaActivity.gear_id) {
           await upsertGear(stravaActivity.gear_id, stravaId, token);

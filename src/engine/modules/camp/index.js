@@ -3,30 +3,32 @@
  * src/engine/modules/camp/index.js
  * ============================================================
  *
- * Ponto de entrada do módulo Camp.
+ * Hierarquia de cálculo:
  *
- * Expõe:
- *   REPROCESS_ON_DELETE — true: ao deletar uma atividade,
- *     reprocessa todas as posteriores do atleta no evento.
+ * TSS:
+ *   1. TRIMP por stream (hr_stream + hr_zones + hr_min)
+ *   2. TRIMP por FC média (average_heartrate + hr_max + hr_min)
+ *   3. TRIMP com defaults (average_heartrate + hr_max)
+ *   4. TSS padrão (weighted_average_watts + ftp_w) — sem FC
+ *   5. Cinemático — sem FC, sem sensor
  *
- *   consolidate(context) — busca dados necessários para o bloco:
- *     - matchSession: vincula atividade à sessão se ainda não vinculada
- *     - computeTotals: acumulados + métricas da atividade + sessão
- *     - estimatePower / estimateFTP / calculateIF / calculateTSS
- *     - persiste TSS em camp_session_activities
- *     - lê campTss APÓS persistência (evita race condition)
+ * NP:
+ *   1. Sensor (weighted_average_watts)
+ *   2. Derivado do IF: NP = IF × ftp
  *
- * Perfil do atleta lido de athletes (dados pessoais migrados
- * de camp_athlete_profiles em 2026-03-19).
+ * IF:
+ *   1. Média(IF_sensor, IF_trimp) — com sensor + ftp_w + FC
+ *   2. IF_sensor = NP_sensor / ftp_w — com sensor + ftp_w, sem FC
+ *   3. Derivado do TSS — demais casos
  * ============================================================
  */
 
 import { computeTotals }    from "./computeTotals.js";
 import { matchSession }     from "./matchSession.js";
 import { buildDescription } from "./buildDescription.js";
+import { estimateLoad }     from "@/lib/physics/estimateLoad.js";
 import { estimatePower }    from "@/lib/physics/estimatePower.js";
 import { estimateFTP }      from "@/lib/physics/estimateFTP.js";
-import { calculateIF }      from "@/lib/physics/estimateIF.js";
 import { calculateTSS }     from "@/lib/physics/calculateTSS.js";
 import { query }            from "@/lib/db";
 
@@ -36,7 +38,7 @@ export const REPROCESS_ON_DELETE = true;
 
 async function getAthleteProfile(stravaId) {
   const result = await query(
-    `SELECT ftp_w, weight_kg, hr_max, hr_zones, gender, birth_date
+    `SELECT ftp_w, weight_kg, hr_max, hr_min, hr_limiar, hr_zones, gender, birth_date
      FROM athletes
      WHERE strava_id = $1`,
     [stravaId]
@@ -44,10 +46,6 @@ async function getAthleteProfile(stravaId) {
   return result.rows[0] || {};
 }
 
-/**
- * Busca zonas de potência e FC do atleta no Strava em um único call.
- * Retorna { powerZones, hrZones } — ambos null se indisponível.
- */
 async function getStravaZones(stravaId) {
   try {
     const tokenResult = await query(
@@ -74,10 +72,6 @@ async function getStravaZones(stravaId) {
   }
 }
 
-/**
- * Calcula idade a partir de birth_date.
- * Retorna null se birth_date não disponível.
- */
 function calcAge(birthDate) {
   if (!birthDate) return null;
   const today = new Date();
@@ -90,10 +84,6 @@ function calcAge(birthDate) {
   return age;
 }
 
-/**
- * Lê o TSS acumulado do camp para o atleta até a atividade atual (inclusive).
- * Chamado APÓS o TSS da atividade atual ser persistido.
- */
 async function readCampTss(stravaId, eventId, activityId) {
   const result = await query(
     `SELECT COALESCE(SUM(csa.tss), 0) AS camp_tss
@@ -113,68 +103,110 @@ async function readCampTss(stravaId, eventId, activityId) {
 export async function consolidate(context) {
   const { stravaId, activityId, eventId, startDateLocal } = context;
 
-  // ── Match de sessão ───────────────────────────────────────
   await matchSession({ activityId, stravaId, eventId, startDateLocal });
 
-  // ── Totais + sessão vinculada ─────────────────────────────
-  const totals = await computeTotals(context);
-
-  // ── Perfil do atleta ──────────────────────────────────────
+  const totals  = await computeTotals(context);
   const profile = await getAthleteProfile(stravaId);
   const age     = calcAge(profile.birth_date);
 
-  // ── Zonas do Strava (potência + FC) — um único call ───────
-  const { powerZones, hrZones } = await getStravaZones(stravaId);
+  const { powerZones, hrZones: stravaHrZones } = await getStravaZones(stravaId);
+
+  // hr_zones: perfil do atleta tem prioridade sobre Strava
+  const hrZones = profile.hr_zones || stravaHrZones || null;
 
   // ── FTP ───────────────────────────────────────────────────
   const { ftp, method: ftpMethod } = estimateFTP({
     ftpW:       profile.ftp_w    || null,
     powerZones: powerZones       || null,
-    hrZones:    profile.hr_zones || hrZones || null,
+    hrZones:    hrZones,
     gender:     profile.gender   || 'masculino',
     weightKg:   profile.weight_kg || null,
   });
 
-  // ── NP: sensor > FC > cinemático ─────────────────────────
-  let np, npMethod;
+  // ── TSS ───────────────────────────────────────────────────
+  let tss, ifValue, np, npMethod, ftpEstimated, loadMethod;
 
-  if (totals.weightedAvgWatts != null) {
-    np       = totals.weightedAvgWatts;
-    npMethod = 'sensor';
-  } else {
-    const estimated = estimatePower({
-      averageHeartrate: totals.averageHeartrate,
-      hrMax:            profile.hr_max,
+  const hasSensor = totals.weightedAvgWatts != null;
+  const hasFC     = !!(totals.hrStream?.length || totals.averageHeartrate);
+
+  if (hasFC) {
+    // TRIMP — fonte primária quando FC disponível
+    const load = estimateLoad({
+      hrStream:          totals.hrStream,
+      averageHeartrate:  totals.averageHeartrate,
+      hrMin:             profile.hr_min    || null,
+      hrMax:             profile.hr_max    || null,
+      hrLimiar:          profile.hr_limiar || null,
+      hrZones,
       age,
-      ftp,
-      distanceM:        totals.activityDistanceM,
-      movingTimeSec:    totals.activityMovingTimeSec,
-      elevationGainM:   totals.activityElevationM,
-      params:           profile.weight_kg ? { mass_kg: profile.weight_kg + 10 } : {},
+      gender:            profile.gender || 'masculino',
+      movingTimeSec:     totals.activityMovingTimeSec,
     });
-    np       = estimated.np;
-    npMethod = estimated.method;
+
+    if (load) {
+      tss        = load.tss;
+      loadMethod = load.method;
+
+      if (hasSensor && ftp > 0) {
+        // IF = média(IF_sensor, IF_trimp)
+        const ifSensor = totals.weightedAvgWatts / ftp;
+        ifValue        = Math.round(((ifSensor + load.ifValue) / 2) * 100) / 100;
+        np             = totals.weightedAvgWatts;
+        npMethod       = 'sensor';
+      } else {
+        ifValue  = load.ifValue;
+        // NP derivado do IF
+        const derived = estimatePower({
+          ifValue,
+          ftp,
+          distanceM:        totals.activityDistanceM,
+          movingTimeSec:    totals.activityMovingTimeSec,
+          elevationGainM:   totals.activityElevationM,
+          params:           profile.weight_kg ? { mass_kg: profile.weight_kg + 10 } : {},
+        });
+        np       = derived.np;
+        npMethod = derived.method;
+      }
+      ftpEstimated = ftpMethod !== 'informed';
+    }
+  }
+
+  // Fallback: sem FC ou estimateLoad falhou
+  if (tss == null) {
+    if (hasSensor && ftp > 0) {
+      // TSS padrão por potência
+      np       = totals.weightedAvgWatts;
+      npMethod = 'sensor';
+      ifValue  = Math.round((np / ftp) * 100) / 100;
+      tss      = Math.round(
+        (totals.activityMovingTimeSec * np * ifValue) / (ftp * 3600) * 100
+      );
+      ftpEstimated = ftpMethod !== 'informed';
+      loadMethod   = 'power';
+    } else {
+      // Cinemático
+      const derived = estimatePower({
+        ifValue:       null,
+        ftp,
+        distanceM:     totals.activityDistanceM,
+        movingTimeSec: totals.activityMovingTimeSec,
+        elevationGainM: totals.activityElevationM,
+        params:        profile.weight_kg ? { mass_kg: profile.weight_kg + 10 } : {},
+      });
+      np       = derived.np;
+      npMethod = derived.method;
+      ifValue  = ftp > 0 ? Math.round((np / ftp) * 100) / 100 : 0;
+      tss      = Math.round(
+        (totals.activityMovingTimeSec * np * ifValue) / (ftp * 3600) * 100
+      );
+      ftpEstimated = ftpMethod !== 'informed';
+      loadMethod   = 'kinematic';
+    }
   }
 
   const npEstimated = npMethod !== 'sensor';
 
-  // ── IF ────────────────────────────────────────────────────
-  const { if: ifValue, ftpEstimated } = calculateIF({
-    np,
-    ftp,
-    npEstimated,
-    ftpMethod,
-  });
-
-  // ── TSS ───────────────────────────────────────────────────
-  const tss = calculateTSS({
-    movingTimeSec: totals.activityMovingTimeSec,
-    np,
-    ifValue,
-    ftp,
-  });
-
-  // ── Persistir TSS e ler campTss (nesta ordem) ─────────────
+  // ── Persistir TSS e ler campTss ───────────────────────────
   let campTss = 0;
 
   if (totals.dayNumber != null) {
@@ -196,7 +228,17 @@ export async function consolidate(context) {
     }
   }
 
-  return { totals, np, npEstimated, npMethod, ifValue, ftpEstimated, tss, campTss };
+  return {
+    totals,
+    np,
+    npEstimated,
+    npMethod,
+    ifValue,
+    ftpEstimated,
+    tss,
+    campTss,
+    loadMethod,
+  };
 }
 
 export { buildDescription };
