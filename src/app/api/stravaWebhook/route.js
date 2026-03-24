@@ -81,13 +81,6 @@ export async function POST(request) {
       [activityId, delay]
     );
 
-    // ── Disparar worker (fire-and-forget) ─────────────────
-    const base = process.env.INTERNAL_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
-    fetch(`${base}/api/internal/strava-worker`, {
-      method:  "POST",
-      headers: { "Authorization": `Bearer ${process.env.INTERNAL_WORKER_SECRET}` },
-    }).catch(err => console.error("[Webhook] Erro ao disparar worker:", err));
-
     return NextResponse.json({ ok: true });
 
   } catch (error) {
