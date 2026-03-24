@@ -107,8 +107,8 @@ export default function CampDashboard({ slug }) {
           {sessions.map((s, i) => (
             <div key={i} style={S.sessCard}>
               <div style={S.sessLeft}>
-                <span style={S.sessDay}>Dia {s.day_number} · Sessão {s.session_order}</span>
-                <span style={S.sessDesc}>{s.short_description || "—"}</span>
+                <span style={S.sessDay}>Dia {s.day_number} · Sessão {s.session_order} · {s.short_description || "—"}</span>
+                <span style={S.sessDesc}>{s.title || "—"}</span>
               </div>
               <div style={S.sessRight}>
                 <div style={S.sessMeta}>

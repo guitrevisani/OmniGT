@@ -368,7 +368,18 @@ export async function POST(request) {
       };
 
       try {
-        const data  = await reg.consolidate(context);
+        const data = await reg.consolidate(context);
+
+        // null = módulo decidiu que esta atividade não se aplica (ex: camp sem match de sessão)
+        if (data === null) {
+          await query(
+            `UPDATE event_activities SET processed = true
+             WHERE event_id = $1 AND strava_activity_id = $2`,
+            [row.event_id, activityId]
+          );
+          continue;
+        }
+
         const block = reg.build(data, context);
 
         if (block) moduleOutputs.push(block);

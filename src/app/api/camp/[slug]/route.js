@@ -55,6 +55,7 @@ export async function GET(request, { params }) {
   // ── Com sessão → dados completos do atleta ───────────
 
   // Acumulados do camp
+  // Acumulados do camp — apenas atividades com match em sessões configuradas
   const totalsResult = await query(
     `SELECT
        COALESCE(SUM(a.distance_m), 0)          AS total_distance_m,
@@ -62,9 +63,10 @@ export async function GET(request, { params }) {
        COALESCE(SUM(a.moving_time), 0)          AS total_moving_time_sec,
        COUNT(*)                                 AS total_activities
      FROM activities a
-     JOIN event_activities ea ON ea.strava_activity_id = a.strava_activity_id
-     WHERE ea.event_id    = $1
-       AND a.strava_id    = $2
+     JOIN camp_session_activities csa ON csa.strava_activity_id = a.strava_activity_id
+     JOIN camp_sessions cs            ON cs.id = csa.session_id
+     WHERE cs.event_id      = $1
+       AND csa.strava_id    = $2
        AND a.duplicate_of IS NULL`,
     [event.id, stravaId]
   );
@@ -89,6 +91,7 @@ export async function GET(request, { params }) {
        cs.day_number,
        cs.session_order,
        cs.short_description,
+       a.title,
        a.distance_m,
        a.total_elevation_gain,
        a.moving_time,

@@ -42,7 +42,7 @@
 import { query } from "@/lib/db";
 
 export async function computeTotals(context) {
-  const { stravaId, activityId, eventId, eventStartDate } = context;
+  const { stravaId, activityId, eventId } = context;
 
   // ── Métricas da atividade atual ───────────────────────────
   const activityResult = await query(
@@ -67,20 +67,21 @@ export async function computeTotals(context) {
   const act = activityResult.rows[0];
 
   // ── Acumulados do camp até esta atividade (inclusive) ─────
+  // Apenas atividades com match em camp_session_activities —
+  // atividades fora das sessões configuradas não entram no acumulado.
   const campResult = await query(
     `SELECT
        COALESCE(SUM(a.distance_m), 0)          AS camp_distance_m,
        COALESCE(SUM(a.total_elevation_gain), 0) AS camp_elevation_m,
        COALESCE(SUM(a.moving_time), 0)          AS camp_moving_time_sec
      FROM activities a
-     JOIN event_activities ea
-       ON ea.strava_activity_id = a.strava_activity_id
-      AND ea.event_id           = $2
-     WHERE a.strava_id      = $1
+     JOIN camp_session_activities csa ON csa.strava_activity_id = a.strava_activity_id
+     JOIN camp_sessions cs            ON cs.id = csa.session_id
+     WHERE cs.event_id      = $2
+       AND csa.strava_id    = $1
        AND a.duplicate_of IS NULL
-       AND a.start_date    <= (SELECT start_date FROM activities WHERE strava_activity_id = $3)
-       AND a.start_date    >= $4::timestamp`,
-    [stravaId, eventId, activityId, eventStartDate]
+       AND a.start_date    <= (SELECT start_date FROM activities WHERE strava_activity_id = $3)`,
+    [stravaId, eventId, activityId]
   );
 
   const camp = campResult.rows[0];

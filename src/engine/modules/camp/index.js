@@ -103,7 +103,10 @@ async function readCampTss(stravaId, eventId, activityId) {
 export async function consolidate(context) {
   const { stravaId, activityId, eventId, startDateLocal } = context;
 
-  await matchSession({ activityId, stravaId, eventId, startDateLocal });
+  const sessionMatch = await matchSession({ activityId, stravaId, eventId, startDateLocal });
+
+  // Atividade fora das sessões configuradas — não processa
+  if (!sessionMatch) return null;
 
   const totals  = await computeTotals(context);
   const profile = await getAthleteProfile(stravaId);
