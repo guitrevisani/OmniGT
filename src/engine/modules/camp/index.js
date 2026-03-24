@@ -101,9 +101,9 @@ async function readCampTss(stravaId, eventId, activityId) {
 // ─── consolidate ──────────────────────────────────────────────────────────────
 
 export async function consolidate(context) {
-  const { stravaId, activityId, eventId, startDateLocal, eventStartDate } = context;
+  const { stravaId, activityId, eventId, startDateLocal } = context;
 
-  const sessionMatch = await matchSession({ activityId, stravaId, eventId, startDateLocal, eventStartDate });
+  const sessionMatch = await matchSession({ activityId, stravaId, eventId, startDateLocal });
 
   // Atividade fora das sessões configuradas — não processa
   if (!sessionMatch) return null;
