@@ -51,12 +51,20 @@ async function matchByRoute(eventId, activityId) {
 /**
  * Tenta match por data + proximidade de horário com scheduled_start.
  *
+ * O day_number esperado é calculado como:
+ *   (activityDate - event_start_date) + 1
+ *
+ * Só sessões desse day_number são consideradas.
+ * Dentro do dia, escolhe a sessão com scheduled_start mais próxima
+ * do horário da atividade, desde que dentro da tolerância.
+ *
  * @param {number} eventId
- * @param {string} activityDate   'YYYY-MM-DD' no horário local
- * @param {string} startDateLocal timestamp local da atividade
+ * @param {string} activityDate     'YYYY-MM-DD' no horário local
+ * @param {string} startDateLocal   timestamp local da atividade
+ * @param {string} eventStartDate   'YYYY-MM-DD' — início do evento
  * @returns {object|null} sessão mais próxima dentro da tolerância, ou null
  */
-async function matchByDatetime(eventId, activityDate, startDateLocal) {
+async function matchByDatetime(eventId, activityDate, startDateLocal, eventStartDate) {
   const result = await query(
     `SELECT cs.id AS session_id, cs.day_number, cs.session_order,
             cs.short_description,
@@ -66,22 +74,13 @@ async function matchByDatetime(eventId, activityDate, startDateLocal) {
      FROM camp_sessions cs
      WHERE cs.event_id         = $1
        AND cs.scheduled_start IS NOT NULL
-       AND cs.day_number = (
-           SELECT day_number
-           FROM camp_sessions
-           WHERE event_id = $1
-             AND scheduled_start IS NOT NULL
-           ORDER BY ABS(EXTRACT(EPOCH FROM (
-             $2::timestamp::time - scheduled_start
-           )))
-           LIMIT 1
-       )
+       AND cs.day_number = ($3::date - $4::date) + 1
        AND ABS(EXTRACT(EPOCH FROM (
          $2::timestamp::time - cs.scheduled_start
-       )) / 60) <= $3
+       )) / 60) <= $5
      ORDER BY diff_min ASC
      LIMIT 1`,
-    [eventId, startDateLocal, SCHEDULE_TOLERANCE_MIN]
+    [eventId, startDateLocal, activityDate, eventStartDate, SCHEDULE_TOLERANCE_MIN]
   );
 
   return result.rows[0] || null;
@@ -121,7 +120,7 @@ async function crossValidate(sessionId, startDateLocal) {
  * @returns {object|null} { sessionId, dayNumber, sessionOrder, shortDescription, matchMethod }
  *                        null se nenhuma sessão compatível encontrada
  */
-export async function matchSession({ activityId, stravaId, eventId, startDateLocal }) {
+export async function matchSession({ activityId, stravaId, eventId, startDateLocal, eventStartDate }) {
   if (!startDateLocal) return null;
 
   const activityDate = startDateLocal.slice(0, 10);
@@ -132,7 +131,7 @@ export async function matchSession({ activityId, stravaId, eventId, startDateLoc
 
   // ── 2. Match por data + horário ─────────────────────────
   if (!session) {
-    session     = await matchByDatetime(eventId, activityDate, startDateLocal);
+    session     = await matchByDatetime(eventId, activityDate, startDateLocal, eventStartDate);
     matchMethod = 'datetime';
   }
 
