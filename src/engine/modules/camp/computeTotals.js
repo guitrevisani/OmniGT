@@ -16,7 +16,6 @@
  *
  * Contrato de saída:
  * {
- *   // Atividade atual
  *   activityDistanceM:     number
  *   activityElevationM:    number
  *   activityMovingTimeSec: number
@@ -24,20 +23,19 @@
  *   deviceWatts:           boolean
  *   averageHeartrate:      number | null
  *   hrZoneTimes:           number[] | null
+ *   hrStream:              number[] | null
  *
- *   // Acumulados do camp até esta atividade (inclusive)
  *   campDistanceM:         number
  *   campElevationM:        number
  *   campMovingTimeSec:     number
  *
- *   // Sessão vinculada (null se match ainda não realizado)
  *   dayNumber:             int | null
  *   sessionOrder:          int | null
  *   shortDescription:      string | null
+ * }
  *
  * Nota: campTss não é retornado aqui — calculado em index.js
  * após persistência do TSS da atividade atual.
- * }
  * ============================================================
  */
 
@@ -55,7 +53,8 @@ export async function computeTotals(context) {
        weighted_average_watts,
        device_watts,
        average_heartrate,
-       hr_zone_times
+       hr_zone_times,
+       hr_stream
      FROM activities
      WHERE strava_activity_id = $1`,
     [activityId]
@@ -113,6 +112,7 @@ export async function computeTotals(context) {
                              ? parseFloat(act.average_heartrate)
                              : null,
     hrZoneTimes:           act.hr_zone_times ?? null,
+    hrStream:              act.hr_stream     ?? null,
 
     campDistanceM:         parseFloat(camp.camp_distance_m)      || 0,
     campElevationM:        parseFloat(camp.camp_elevation_m)     || 0,

@@ -149,8 +149,9 @@ export async function matchSession({ activityId, stravaId, eventId, startDateLoc
     `INSERT INTO camp_session_activities
        (session_id, strava_activity_id, strava_id, match_method, start_date_local)
      VALUES ($1, $2, $3, $4, $5::timestamp)
-     ON CONFLICT (session_id, strava_id) DO UPDATE SET
-       strava_activity_id = EXCLUDED.strava_activity_id,
+     ON CONFLICT (strava_activity_id) DO UPDATE SET
+       session_id         = EXCLUDED.session_id,
+       strava_id          = EXCLUDED.strava_id,
        match_method       = EXCLUDED.match_method,
        start_date_local   = EXCLUDED.start_date_local,
        matched_at         = now()`,

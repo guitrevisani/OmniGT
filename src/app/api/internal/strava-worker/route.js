@@ -121,7 +121,6 @@ async function removeFromQueue(activityId) {
 /**
  * Atualiza hr_min em athletes se o mínimo do stream for menor
  * que o valor atualmente persistido.
- * Usa o stream quando disponível — average_heartrate é média, não mínima.
  */
 async function updateHrMin(stravaId, hrStream) {
   if (!hrStream?.length) return;
@@ -208,7 +207,7 @@ export async function POST(request) {
         }
 
         // ── Buscar eventos ativos do atleta dentro do período ─
-        // Compara por data (::date) para evitar problemas de timezone UTC
+        // Cast ::date para evitar problemas de timezone UTC
         // onde start_date 10:00 UTC > end_date 00:00 UTC do mesmo dia.
         const eventsResult = await query(
           `SELECT e.id AS event_id
@@ -232,11 +231,21 @@ export async function POST(request) {
 
         const token = await getValidAccessToken(stravaId);
 
+        // ── Dados frescos do Strava ─────────────────────────
         const stravaRes = await fetch(`${STRAVA_API}/activities/${activityId}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
         if (!stravaRes.ok) {
+          // 429: rate limit — adia 15 minutos em vez de abandonar
+          if (stravaRes.status === 429) {
+            await query(
+              `UPDATE activity_processing_queue
+               SET next_run_at = NOW() + INTERVAL '15 minutes'
+               WHERE strava_activity_id = $1`,
+              [activityId]
+            );
+          }
           errors.push({ activityId, reason: `strava_fetch_${stravaRes.status}` });
           continue;
         }
