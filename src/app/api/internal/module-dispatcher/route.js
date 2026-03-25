@@ -276,7 +276,9 @@ export async function POST(request) {
   try {
     // ── Buscar activity no banco ──────────────────────────
     const actResult = await query(
-      `SELECT last_webhook_aspect, start_date, start_date_local
+      `SELECT last_webhook_aspect,
+              TO_CHAR(COALESCE(start_date_local, start_date), 'YYYY-MM-DD HH24:MI:SS') AS start_date_local_str,
+              TO_CHAR(COALESCE(start_date_local, start_date), 'YYYY-MM-DD')            AS activity_date_str
        FROM activities WHERE strava_activity_id = $1`,
       [activityId]
     );
@@ -288,9 +290,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, reason: "delete_skipped", processed: 0 });
     }
 
-    const activityDate = (
-      actResult.rows[0].start_date_local || actResult.rows[0].start_date
-    ).toISOString().slice(0, 10);
+    const activityDate = actResult.rows[0].activity_date_str;
 
     // ── Buscar event_activities pendentes ────────────────
     const pendingResult = await query(
@@ -364,7 +364,7 @@ export async function POST(request) {
         eventName:      row.event_name,
         eventStartDate: row.event_start_date,
         eventEndDate:   row.event_end_date,
-        startDateLocal: (actResult.rows[0].start_date_local || actResult.rows[0].start_date).toISOString().replace('T', ' ').slice(0, 19),
+        startDateLocal: actResult.rows[0].start_date_local_str,
       };
 
       try {

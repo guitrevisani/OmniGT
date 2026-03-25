@@ -118,7 +118,7 @@ export async function GET(request, { params }) {
        csa.tss
      FROM activities a
      JOIN event_activities ea ON ea.strava_activity_id = a.strava_activity_id
-     LEFT JOIN camp_session_activities csa ON csa.strava_activity_id = a.strava_activity_id
+     JOIN camp_session_activities csa ON csa.strava_activity_id = a.strava_activity_id
      WHERE ea.event_id    = $1
        AND a.strava_id    = $2
        AND a.duplicate_of IS NULL
