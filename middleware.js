@@ -19,13 +19,20 @@ import { NextResponse } from "next/server";
  *   Protegidas por header Authorization: Bearer <INTERNAL_WORKER_SECRET>.
  *   Chamadas apenas server-to-server — nunca expostas ao browser.
  *
+ * /events/*  e  /api/events/create
+ *   Criação e gestão de eventos por OWNER ou PROVIDER.
+ *   Requer cookie de sessão Strava válido ("session").
+ *   A verificação de role (OWNER/PROVIDER) é feita na própria
+ *   page/API — o middleware só garante que há uma sessão ativa.
+ *   Sem sessão → redirect para /api/auth/strava/start?event=home
+ *
  * Rotas públicas (sem proteção aqui):
  *   /                     landing page
- *   /[slug]               página do evento (acesso validado na própria página)
+ *   /[slug]               página do evento
  *   /[slug]/register      inscrição no evento
  *   /api/auth/strava/*    fluxo OAuth
  *   /api/stravaWebhook    recebimento de webhooks do Strava
- *   /api/events           listagem pública de eventos
+ *   /api/events           listagem pública de eventos (GET)
  * ============================================================
  */
 
@@ -80,6 +87,25 @@ export function middleware(request) {
     return NextResponse.next();
   }
 
+  // ── /events/* e /api/events/create ───────────────────────
+  // Requer sessão Strava ativa (role check feito na route/page)
+  const isEventsPage = pathname.startsWith("/events/");
+  const isEventsCreateApi = pathname === "/api/events/create";
+
+  if (isEventsPage || isEventsCreateApi) {
+    const sessionCookie = request.cookies.get("session")?.value;
+
+    if (!sessionCookie) {
+      // Sem sessão → inicia OAuth (state "home" para redirecionar depois)
+      const loginUrl = new URL("/api/auth/strava/start", request.url);
+      loginUrl.searchParams.set("event", "home");
+      return NextResponse.redirect(loginUrl);
+    }
+
+    // Sessão presente — role check será feito na page/API
+    return NextResponse.next();
+  }
+
   return NextResponse.next();
 }
 
@@ -87,5 +113,7 @@ export const config = {
   matcher: [
     "/provider/:path*",
     "/api/internal/:path*",
+    "/events/:path*",
+    "/api/events/create",
   ],
 };
