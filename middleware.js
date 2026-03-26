@@ -5,34 +5,22 @@ import { NextResponse } from "next/server";
  * MIDDLEWARE DE ACESSO
  * ============================================================
  *
- * Rotas protegidas:
- *
  * /provider/*
- *   Acesso exclusivo do provider.
- *   Autenticado por cookie "provider_session" cujo valor deve
- *   bater com PROVIDER_SECRET (variável server-side apenas).
- *   Acesso inicial via GET /provider?key=<PROVIDER_SECRET>,
- *   que define o cookie e redireciona para /provider.
+ *   Acesso exclusivo do provider via cookie "provider_session".
  *
  * /api/internal/*
- *   Rotas internas da engine (worker, validate-access, role).
- *   Protegidas por header Authorization: Bearer <INTERNAL_WORKER_SECRET>.
- *   Chamadas apenas server-to-server — nunca expostas ao browser.
+ *   Rotas internas protegidas por Bearer token.
  *
- * /events/*  e  /api/events/create
- *   Criação e gestão de eventos por OWNER ou PROVIDER.
- *   Requer cookie de sessão Strava válido ("session").
- *   A verificação de role (OWNER/PROVIDER) é feita na própria
- *   page/API — o middleware só garante que há uma sessão ativa.
- *   Sem sessão → redirect para /api/auth/strava/start?event=home
+ * /events/*
+ *   Página de criação/gestão de eventos (UI).
+ *   Requer cookie "session" (Strava OAuth).
+ *   Sem sessão → redirect para OAuth.
+ *   A verificação de role (OWNER/PROVIDER) é feita na própria page.
  *
- * Rotas públicas (sem proteção aqui):
- *   /                     landing page
- *   /[slug]               página do evento
- *   /[slug]/register      inscrição no evento
- *   /api/auth/strava/*    fluxo OAuth
- *   /api/stravaWebhook    recebimento de webhooks do Strava
- *   /api/events           listagem pública de eventos (GET)
+ * /api/events/create  →  NÃO está no middleware.
+ *   É uma API route (só aceita POST). A proteção é feita internamente
+ *   via getSession() + resolveCreatorRole(). Colocar no middleware
+ *   causava 405 porque o redirect do middleware fazia um GET na rota.
  * ============================================================
  */
 
@@ -43,14 +31,9 @@ export function middleware(request) {
   if (pathname.startsWith("/api/internal/")) {
     const authHeader = request.headers.get("authorization");
     const expected = `Bearer ${process.env.INTERNAL_WORKER_SECRET}`;
-
     if (authHeader !== expected) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
     return NextResponse.next();
   }
 
@@ -58,51 +41,38 @@ export function middleware(request) {
   if (pathname.startsWith("/provider")) {
     const secret = process.env.PROVIDER_SECRET;
 
-    // Primeiro acesso via query param → define cookie e redireciona
     const keyParam = request.nextUrl.searchParams.get("key");
     if (keyParam) {
       if (keyParam !== secret) {
         return NextResponse.redirect(new URL("/", request.url));
       }
-
-      const response = NextResponse.redirect(
-        new URL("/provider", request.url)
-      );
+      const response = NextResponse.redirect(new URL("/provider", request.url));
       response.cookies.set("provider_session", secret, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
         path: "/provider",
-        maxAge: 60 * 60 * 8, // 8 horas
+        maxAge: 60 * 60 * 8,
       });
       return response;
     }
 
-    // Acessos subsequentes → valida cookie
     const sessionCookie = request.cookies.get("provider_session")?.value;
     if (sessionCookie !== secret) {
       return NextResponse.redirect(new URL("/", request.url));
     }
-
     return NextResponse.next();
   }
 
-  // ── /events/* e /api/events/create ───────────────────────
-  // Requer sessão Strava ativa (role check feito na route/page)
-  const isEventsPage = pathname.startsWith("/events/");
-  const isEventsCreateApi = pathname === "/api/events/create";
-
-  if (isEventsPage || isEventsCreateApi) {
+  // ── /events/* (páginas UI) ────────────────────────────────
+  // API routes em /api/events/* não passam aqui — protegidas internamente.
+  if (pathname.startsWith("/events/")) {
     const sessionCookie = request.cookies.get("session")?.value;
-
     if (!sessionCookie) {
-      // Sem sessão → inicia OAuth (state "home" para redirecionar depois)
       const loginUrl = new URL("/api/auth/strava/start", request.url);
       loginUrl.searchParams.set("event", "home");
       return NextResponse.redirect(loginUrl);
     }
-
-    // Sessão presente — role check será feito na page/API
     return NextResponse.next();
   }
 
@@ -114,6 +84,7 @@ export const config = {
     "/provider/:path*",
     "/api/internal/:path*",
     "/events/:path*",
-    "/api/events/create",
+    // /api/events/create removido — API route só aceita POST,
+    // middleware causava 405 ao tentar redirecionar via GET
   ],
 };
