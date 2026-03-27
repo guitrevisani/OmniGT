@@ -35,11 +35,6 @@ export async function POST(request) {
 
     const eventId = eventResult.rows[0].id;
 
-    // Confirmar que a sessão pertence a este evento
-    if (session.eventId !== eventId) {
-      return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
-    }
-
     const memberResult = await query(
       `SELECT role FROM athlete_events
        WHERE strava_id = $1 AND event_id = $2 AND status = 'active'`,

@@ -1,7 +1,7 @@
 // src/app/[slug]/dashboard/page.js
 import { redirect }       from "next/navigation";
 import { query }          from "@/lib/db";
-import { getSession }     from "@/lib/session";
+import { getSession, hasRequiredScopes } from "@/lib/session";
 import AgendaDashboard    from "./AgendaDashboard";
 import EstimatorDashboard from "./EstimatorDashboard";
 import CampDashboard      from "./CampDashboard";
@@ -31,15 +31,21 @@ export default async function DashboardPage({ params }) {
 
   if (event.requires_registration) {
     const session = await getSession();
-    if (!session) redirect(`/${slug}/register`);
-    if (session.eventId !== event.id) redirect(`/${slug}/register`);
 
+    // Sem sessão → registro/OAuth
+    if (!session) redirect(`/${slug}/register`);
+
+    // Verifica se o atleta está inscrito e ativo neste evento
     const member = await query(
       `SELECT status FROM athlete_events
        WHERE strava_id = $1 AND event_id = $2 AND status = 'active'`,
       [session.stravaId, event.id]
     );
     if (member.rows.length === 0) redirect(`/${slug}/register`);
+
+    // Verifica se os scopes concedidos satisfazem os requeridos pelo evento
+    const scopeOk = await hasRequiredScopes(session.stravaId, slug);
+    if (!scopeOk) redirect(`/api/auth/strava/start?event=${slug}`);
   }
 
   const Component = MODULE_COMPONENTS[event.module_slug];

@@ -33,11 +33,11 @@ export default async function EventIndexPage({ params }) {
     redirect(`/${slug}/dashboard`);
   }
 
-  // Camp → verifica sessão antes de decidir
+  // Camp → verifica sessão e inscrição antes de decidir
   if (event.module_slug === "camp") {
     const session = await getSession();
 
-    if (session && session.eventId === event.id) {
+    if (session) {
       const member = await query(
         `SELECT status FROM athlete_events
          WHERE strava_id = $1 AND event_id = $2 AND status = 'active'`,
@@ -63,7 +63,6 @@ export default async function EventIndexPage({ params }) {
   // Demais módulos com registro
   const session = await getSession();
   if (!session) redirect(`/${slug}/register`);
-  if (session.eventId !== event.id) redirect(`/${slug}/register`);
 
   const member = await query(
     `SELECT status FROM athlete_events

@@ -1,7 +1,7 @@
-// /src/app/api/internal/role/route.js
+// src/app/api/internal/role/route.js
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
-import { getSession } from "@/lib/session";
+import { query }        from "@/lib/db";
+import { getSession }   from "@/lib/session";
 
 export async function GET(request) {
   try {
@@ -27,10 +27,6 @@ export async function GET(request) {
     }
 
     const eventId = eventResult.rows[0].id;
-
-    if (session.eventId !== eventId) {
-      return NextResponse.json({ error: "Sessão não pertence a este evento" }, { status: 403 });
-    }
 
     const roleResult = await query(
       `SELECT role, status FROM athlete_events

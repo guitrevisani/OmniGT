@@ -1,7 +1,7 @@
-// /src/app/api/internal/validate-access/route.js
+// src/app/api/internal/validate-access/route.js
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
-import { getSession } from "@/lib/session";
+import { query }        from "@/lib/db";
+import { getSession }   from "@/lib/session";
 
 export const runtime = "nodejs";
 
@@ -24,10 +24,6 @@ export async function POST(request) {
     }
 
     const eventId = eventResult.rows[0].id;
-
-    if (session.eventId !== eventId) {
-      return NextResponse.json({ valid: false }, { status: 403 });
-    }
 
     const roleResult = await query(
       `SELECT role, status FROM athlete_events
