@@ -1,3 +1,4 @@
+// src/app/api/auth/strava/start/route.js
 import { NextResponse } from "next/server";
 
 /**
@@ -8,6 +9,11 @@ import { NextResponse } from "next/server";
  *
  * Query params:
  *   event  → slug do evento (obrigatório, passado como state para o callback)
+ *
+ * Scope: "read,activity:read_all"
+ *   - "read" é obrigatório pelo Strava (perfil básico)
+ *   - "activity:read_all" cobre activity:read e dá acesso a atividades privadas
+ *   - satisfaz o required_scopes de todos os módulos do sistema
  */
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -21,15 +27,15 @@ export async function GET(request) {
   }
 
   const params = new URLSearchParams({
-    client_id:     process.env.STRAVA_CLIENT_ID,
-    redirect_uri:  process.env.STRAVA_REDIRECT_URI,
-    response_type: "code",
+    client_id:       process.env.STRAVA_CLIENT_ID,
+    redirect_uri:    process.env.STRAVA_REDIRECT_URI,
+    response_type:   "code",
     approval_prompt: "auto",
-    scope:         "activity:read,activity:write",
-    state:         eventSlug,
+    scope:           "read,activity:read_all",
+    state:           eventSlug,
   });
 
-  const stravaAuthUrl = `https://www.strava.com/oauth/authorize?${params.toString()}`;
-
-  return NextResponse.redirect(stravaAuthUrl);
+  return NextResponse.redirect(
+    `https://www.strava.com/oauth/authorize?${params.toString()}`
+  );
 }
