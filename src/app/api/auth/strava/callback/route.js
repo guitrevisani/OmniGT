@@ -14,6 +14,16 @@ export async function GET(request) {
   const keepGoals   = searchParams.get("keep_goals") !== "0";
   const pushConsent = searchParams.get("push_consent") === "1";
 
+  // ── LOG TEMPORÁRIO DE DIAGNÓSTICO ─────────────────────
+  console.log("[Callback] params recebidos:", {
+    code:      code ? code.substring(0, 8) + "..." : null,
+    eventSlug,
+    STRAVA_CLIENT_ID:      process.env.STRAVA_CLIENT_ID,
+    STRAVA_REDIRECT_URI:   process.env.STRAVA_REDIRECT_URI,
+    client_secret_defined: !!process.env.STRAVA_CLIENT_SECRET,
+    client_secret_length:  process.env.STRAVA_CLIENT_SECRET?.length,
+  });
+
   if (!code || !eventSlug) {
     return NextResponse.json({ error: "Parâmetros ausentes: code ou state" }, { status: 400 });
   }
@@ -38,18 +48,33 @@ export async function GET(request) {
     const eventEndDate = event.end_date;
 
     // ── 2. Trocar code por tokens ─────────────────────────
+    const tokenPayload = {
+      client_id:     process.env.STRAVA_CLIENT_ID,
+      client_secret: process.env.STRAVA_CLIENT_SECRET,
+      code,
+      grant_type:    "authorization_code",
+    };
+
+    console.log("[Callback] enviando para Strava:", {
+      client_id:    tokenPayload.client_id,
+      code_prefix:  code.substring(0, 8),
+      grant_type:   tokenPayload.grant_type,
+      redirect_uri: process.env.STRAVA_REDIRECT_URI,
+    });
+
     const tokenRes = await fetch("https://www.strava.com/oauth/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        client_id:     process.env.STRAVA_CLIENT_ID,
-        client_secret: process.env.STRAVA_CLIENT_SECRET,
-        code,
-        grant_type: "authorization_code",
-      }),
+      body: JSON.stringify(tokenPayload),
     });
 
     const tokenData = await tokenRes.json();
+
+    console.log("[Callback] resposta Strava:", {
+      status: tokenRes.status,
+      ok:     tokenRes.ok,
+      data:   tokenData,
+    });
 
     if (!tokenRes.ok || !tokenData.access_token || !tokenData.athlete) {
       return NextResponse.json(
@@ -61,7 +86,6 @@ export async function GET(request) {
     const { athlete, access_token, refresh_token, expires_at, scope } = tokenData;
     const stravaId = athlete.id;
 
-    // Mapear sex → gender
     const genderFromStrava = athlete.sex === "M"
       ? "masculino"
       : athlete.sex === "F"
@@ -69,7 +93,6 @@ export async function GET(request) {
         : null;
 
     // ── 3. UPSERT atleta ──────────────────────────────────
-    // gender e email não sobrescrevem valores já informados pelo atleta
     await query(
       `INSERT INTO athletes (
          strava_id, firstname, lastname,
@@ -130,8 +153,6 @@ export async function GET(request) {
 
         if (existing.rows.length === 0) {
           const sessionToken = await createSession(stravaId, eventId, eventEndDate);
-          console.log("[Callback] eventEndDate:", eventEndDate, typeof eventEndDate);
-          console.log("[Callback] sessionToken:", sessionToken);
           const response = NextResponse.redirect(
             new URL(`/${eventSlug}/register?warn=no_goals`, request.url)
           );
@@ -178,8 +199,6 @@ export async function GET(request) {
     const sessionToken = await createSession(stravaId, eventId, eventEndDate);
 
     // ── 8. Cookie + redirect ──────────────────────────────
-    // Camp: já tem perfil preenchido → dashboard, caso contrário → formulário
-    // Demais módulos → apresentação (/{slug}) que trata o redirect internamente
     let redirectPath = `/${eventSlug}`;
     if (moduleSlug === "camp") {
       const profile = await query(
