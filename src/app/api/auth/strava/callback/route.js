@@ -9,11 +9,29 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const code        = searchParams.get("code");
   const eventSlug   = searchParams.get("state");
+  const stravaError = searchParams.get("error");        // Strava retorna ?error=access_denied
   const goalKm      = searchParams.get("goal_km");
   const goalHours   = searchParams.get("goal_hours");
   const keepGoals   = searchParams.get("keep_goals") !== "0";
   const pushConsent = searchParams.get("push_consent") === "1";
 
+<<<<<<< HEAD
+  console.log("[Callback] searchParams:", {
+    code:        code ? code.substring(0, 8) + "..." : null,
+    stravaError,
+    eventSlug,
+    allParams:   Object.fromEntries(searchParams.entries()),
+  });
+
+  // Strava rejeitou — redireciona para o register com aviso
+  if (stravaError) {
+    const slug = eventSlug || "";
+    return NextResponse.redirect(
+      new URL(`/${slug}/register?error=strava_${stravaError}`, request.url)
+    );
+  }
+
+=======
   // ── LOG TEMPORÁRIO DE DIAGNÓSTICO ─────────────────────
   console.log("[Callback] params recebidos:", {
     code:      code ? code.substring(0, 8) + "..." : null,
@@ -24,6 +42,7 @@ export async function GET(request) {
     client_secret_length:  process.env.STRAVA_CLIENT_SECRET?.length,
   });
 
+>>>>>>> 086130d7545b945193f0eebe531d30e4d552e0cc
   if (!code || !eventSlug) {
     return NextResponse.json({ error: "Parâmetros ausentes: code ou state" }, { status: 400 });
   }
@@ -65,15 +84,32 @@ export async function GET(request) {
     const tokenRes = await fetch("https://www.strava.com/oauth/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+<<<<<<< HEAD
+      body: JSON.stringify({
+        client_id:     process.env.STRAVA_CLIENT_ID,
+        client_secret: process.env.STRAVA_CLIENT_SECRET,
+        code,
+        grant_type:    "authorization_code",
+      }),
+=======
       body: JSON.stringify(tokenPayload),
+>>>>>>> 086130d7545b945193f0eebe531d30e4d552e0cc
     });
 
     const tokenData = await tokenRes.json();
 
+<<<<<<< HEAD
+    console.log("[Callback] Strava token response:", {
+      status: tokenRes.status,
+      ok:     tokenRes.ok,
+      error:  tokenData.message || null,
+      errors: tokenData.errors  || null,
+=======
     console.log("[Callback] resposta Strava:", {
       status: tokenRes.status,
       ok:     tokenRes.ok,
       data:   tokenData,
+>>>>>>> 086130d7545b945193f0eebe531d30e4d552e0cc
     });
 
     if (!tokenRes.ok || !tokenData.access_token || !tokenData.athlete) {
