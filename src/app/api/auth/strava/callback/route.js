@@ -9,20 +9,26 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const code        = searchParams.get("code");
   const eventSlug   = searchParams.get("state");
+  const stravaError = searchParams.get("error");        // Strava retorna ?error=access_denied
   const goalKm      = searchParams.get("goal_km");
   const goalHours   = searchParams.get("goal_hours");
   const keepGoals   = searchParams.get("keep_goals") !== "0";
   const pushConsent = searchParams.get("push_consent") === "1";
 
-  // ── LOG TEMPORÁRIO DE DIAGNÓSTICO ─────────────────────
-  console.log("[Callback] params recebidos:", {
-    code:      code ? code.substring(0, 8) + "..." : null,
+  console.log("[Callback] searchParams:", {
+    code:        code ? code.substring(0, 8) + "..." : null,
+    stravaError,
     eventSlug,
-    STRAVA_CLIENT_ID:      process.env.STRAVA_CLIENT_ID,
-    STRAVA_REDIRECT_URI:   process.env.STRAVA_REDIRECT_URI,
-    client_secret_defined: !!process.env.STRAVA_CLIENT_SECRET,
-    client_secret_length:  process.env.STRAVA_CLIENT_SECRET?.length,
+    allParams:   Object.fromEntries(searchParams.entries()),
   });
+
+  // Strava rejeitou — redireciona para o register com aviso
+  if (stravaError) {
+    const slug = eventSlug || "";
+    return NextResponse.redirect(
+      new URL(`/${slug}/register?error=strava_${stravaError}`, request.url)
+    );
+  }
 
   if (!code || !eventSlug) {
     return NextResponse.json({ error: "Parâmetros ausentes: code ou state" }, { status: 400 });
@@ -48,32 +54,24 @@ export async function GET(request) {
     const eventEndDate = event.end_date;
 
     // ── 2. Trocar code por tokens ─────────────────────────
-    const tokenPayload = {
-      client_id:     process.env.STRAVA_CLIENT_ID,
-      client_secret: process.env.STRAVA_CLIENT_SECRET,
-      code,
-      grant_type:    "authorization_code",
-    };
-
-    console.log("[Callback] enviando para Strava:", {
-      client_id:    tokenPayload.client_id,
-      code_prefix:  code.substring(0, 8),
-      grant_type:   tokenPayload.grant_type,
-      redirect_uri: process.env.STRAVA_REDIRECT_URI,
-    });
-
     const tokenRes = await fetch("https://www.strava.com/oauth/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(tokenPayload),
+      body: JSON.stringify({
+        client_id:     process.env.STRAVA_CLIENT_ID,
+        client_secret: process.env.STRAVA_CLIENT_SECRET,
+        code,
+        grant_type:    "authorization_code",
+      }),
     });
 
     const tokenData = await tokenRes.json();
 
-    console.log("[Callback] resposta Strava:", {
+    console.log("[Callback] Strava token response:", {
       status: tokenRes.status,
       ok:     tokenRes.ok,
-      data:   tokenData,
+      error:  tokenData.message || null,
+      errors: tokenData.errors  || null,
     });
 
     if (!tokenRes.ok || !tokenData.access_token || !tokenData.athlete) {
