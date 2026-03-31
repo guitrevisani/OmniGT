@@ -41,9 +41,9 @@ export default function RootLayout({ children }) {
       <link rel="icon" href="/favicon.png" />
 
       {/* ── Ícones Apple (PWA — "Adicionar à Tela de Início" no iOS) ── */}
-      <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-      <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png" />
-      <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png" />
+      <link rel="apple-touch-icon" href="/icon-192.png" />
+      <link rel="apple-touch-icon" sizes="152x152" href="/icon-152.png" />
+      <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
 
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
 

@@ -1,43 +1,6 @@
 "use client";
 
-// src/components/PWAInstallBanner.jsx
-//
-// ─── O QUE É ──────────────────────────────────────────────────────────────────
-//
-// Banner de instalação PWA unificado para iOS e Android.
-//
-// ─── COMO CADA PLATAFORMA FUNCIONA ───────────────────────────────────────────
-//
-// ANDROID (Chrome, Edge, Samsung Internet):
-//   O browser emite o evento `beforeinstallprompt` quando o app é instalável.
-//   Capturamos esse evento, impedimos o prompt nativo automático, e exibimos
-//   nosso banner customizado. Quando o usuário aceita, chamamos prompt() no
-//   evento capturado — o browser faz o resto. É limpo e nativo.
-//   Condições para o Chrome emitir o evento:
-//     - HTTPS
-//     - manifest.json com name, start_url, icons (192 e 512)
-//     - display: standalone
-//     - Service worker registrado
-//     - App ainda não instalado
-//
-// iOS (Safari):
-//   Não existe `beforeinstallprompt`. A instalação é sempre manual:
-//   Safari → botão Compartilhar → "Adicionar à Tela de Início".
-//   Exibimos um banner explicativo com os 3 passos e uma seta apontando
-//   para o botão de compartilhamento na barra inferior do Safari.
-//   Push web no iOS SÓ funciona com o app instalado como PWA.
-//
-// ─── LÓGICA DE EXIBIÇÃO ──────────────────────────────────────────────────────
-//
-//  1. Se já está em modo standalone → não exibe nada (já instalado)
-//  2. Se Android + beforeinstallprompt capturado → exibe banner Android
-//  3. Se iOS + Safari → exibe banner iOS após 2.5s
-//  4. Se dispensado → suprime por DISMISS_DAYS dias (localStorage)
-//  5. Se instalado com sucesso (Android) → suprime permanentemente
-
 import { useState, useEffect, useRef } from "react";
-
-// ── Detecção de plataforma ────────────────────────────────────────────────────
 
 function isIOS() {
   if (typeof navigator === "undefined") return false;
@@ -62,11 +25,9 @@ function isSafariBrowser() {
   return /safari/i.test(navigator.userAgent) && !/chrome|crios|fxios/i.test(navigator.userAgent);
 }
 
-// ── Persistência de dismiss ───────────────────────────────────────────────────
-
-const DISMISSED_KEY  = "pwa_banner_dismissed_at";
-const INSTALLED_KEY  = "pwa_installed";
-const DISMISS_DAYS   = 30;
+const DISMISSED_KEY = "pwa_banner_dismissed_at";
+const INSTALLED_KEY = "pwa_installed";
+const DISMISS_DAYS  = 30;
 
 function wasDismissedRecently() {
   try {
@@ -85,8 +46,6 @@ function saveInstalled() {
   try { localStorage.setItem(INSTALLED_KEY, "1"); } catch {}
 }
 
-// ── Design tokens ─────────────────────────────────────────────────────────────
-
 const C = {
   bg:      "#1e293b",
   border:  "#334155",
@@ -95,7 +54,6 @@ const C = {
   dim:     "#64748b",
   accent:  "#3b82f6",
   surface: "#0f172a",
-  ok:      "#22c55e",
 };
 
 const S = {
@@ -133,11 +91,11 @@ const S = {
     lineHeight: 1,
   },
   header: {
-    display:       "flex",
-    alignItems:    "center",
-    gap:           "0.75rem",
-    marginBottom:  "0.9rem",
-    paddingRight:  "1.5rem",
+    display:      "flex",
+    alignItems:   "center",
+    gap:          "0.75rem",
+    marginBottom: "0.9rem",
+    paddingRight: "1.5rem",
   },
   appIcon: {
     width:          "3rem",
@@ -168,24 +126,22 @@ const S = {
     borderTop: `1px solid ${C.border}`,
     margin:    "0 0 0.85rem",
   },
-  // Android: botão de instalação
   installBtn: {
-    width:        "100%",
-    background:   C.accent,
-    border:       "none",
-    borderRadius: "0.6rem",
-    color:        "#fff",
-    cursor:       "pointer",
-    fontSize:     "0.88rem",
-    fontWeight:   700,
-    fontFamily:   "inherit",
-    padding:      "0.75rem",
-    letterSpacing:"0.02em",
-    display:      "flex",
-    alignItems:   "center",
-    justifyContent:"center",
-    gap:          "0.5rem",
-    transition:   "background 0.15s",
+    width:          "100%",
+    background:     C.accent,
+    border:         "none",
+    borderRadius:   "0.6rem",
+    color:          "#fff",
+    cursor:         "pointer",
+    fontSize:       "0.88rem",
+    fontWeight:     700,
+    fontFamily:     "inherit",
+    padding:        "0.75rem",
+    letterSpacing:  "0.02em",
+    display:        "flex",
+    alignItems:     "center",
+    justifyContent: "center",
+    gap:            "0.5rem",
   },
   notNow: {
     display:    "block",
@@ -200,7 +156,6 @@ const S = {
     width:      "100%",
     fontFamily: "inherit",
   },
-  // iOS: passos manuais
   steps: {
     display:       "flex",
     flexDirection: "column",
@@ -252,8 +207,6 @@ const CSS = `
   }
 `;
 
-// ── Ícone compartilhar do Safari ──────────────────────────────────────────────
-
 function ShareIcon({ size = "1em" }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -264,8 +217,6 @@ function ShareIcon({ size = "1em" }) {
     </svg>
   );
 }
-
-// ── Ícone download ────────────────────────────────────────────────────────────
 
 function DownloadIcon() {
   return (
@@ -278,28 +229,21 @@ function DownloadIcon() {
   );
 }
 
-// ── Banner iOS ────────────────────────────────────────────────────────────────
-
 function IOSBanner({ onDismiss }) {
   return (
     <>
       <div style={S.header}>
         <div style={S.appIcon}>🏔️</div>
         <div style={S.titleBlock}>
-          <p style={S.title}>Instale o Triap</p>
+          <p style={S.title}>Instale o OGT</p>
           <p style={S.subtitle}>Necessário para receber notificações dos seus eventos</p>
         </div>
       </div>
-
       <div style={S.divider} />
-
       <div style={S.steps}>
         <div style={S.step}>
           <div style={S.stepNum}>1</div>
-          <span>
-            Toque em <ShareIcon size="1.1em" />{" "}
-            <strong style={{ color: C.accent }}>Compartilhar</strong> na barra do Safari
-          </span>
+          <span>Toque em <ShareIcon size="1.1em" /> <strong style={{ color: C.accent }}>Compartilhar</strong> na barra do Safari</span>
         </div>
         <div style={S.step}>
           <div style={S.stepNum}>2</div>
@@ -307,24 +251,18 @@ function IOSBanner({ onDismiss }) {
         </div>
         <div style={S.step}>
           <div style={S.stepNum}>3</div>
-          <span>Toque em <strong style={{ color: "#f1f5f9" }}>"Adicionar"</strong> e abra o Triap pela tela inicial</span>
+          <span>Toque em <strong style={{ color: "#f1f5f9" }}>"Adicionar"</strong> e abra pela tela inicial</span>
         </div>
       </div>
-
-      {/* Seta apontando para o botão de compartilhar (barra inferior Safari) */}
       <div style={S.arrowWrap}>
-        <svg style={S.arrowSvg} viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" strokeWidth="2.5">
+        <svg style={S.arrowSvg} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
           <path d="M12 5v14M5 12l7 7 7-7" />
         </svg>
       </div>
-
       <button style={S.notNow} onClick={onDismiss}>Agora não</button>
     </>
   );
 }
-
-// ── Banner Android ────────────────────────────────────────────────────────────
 
 function AndroidBanner({ onInstall, onDismiss }) {
   return (
@@ -333,55 +271,47 @@ function AndroidBanner({ onInstall, onDismiss }) {
         <div style={S.appIcon}>🏔️</div>
         <div style={S.titleBlock}>
           <p style={S.title}>Adicionar à tela inicial</p>
-          <p style={S.subtitle}>
-            Acesso rápido e notificações dos seus eventos, sem precisar abrir o browser
-          </p>
+          <p style={S.subtitle}>Acesso rápido e notificações dos seus eventos</p>
         </div>
       </div>
-
       <div style={S.divider} />
-
       <button style={S.installBtn} onClick={onInstall}>
         <DownloadIcon />
-        Instalar o Triap
+        Instalar o OGT
       </button>
-
       <button style={S.notNow} onClick={onDismiss}>Agora não</button>
     </>
   );
 }
 
-// ── Componente principal ──────────────────────────────────────────────────────
-
 export default function PWAInstallBanner() {
-  const [platform, setPlatform]       = useState(null); // "ios" | "android" | null
-  const [visible, setVisible]         = useState(false);
-  const deferredPrompt                = useRef(null);
+  const [platform, setPlatform] = useState(null);
+  const [visible, setVisible]   = useState(false);
+  const deferredPrompt          = useRef(null);
 
   useEffect(() => {
-    // Já instalado ou dispensado recentemente → sai
+    // Registra o service worker
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+
     if (isStandalone() || wasDismissedRecently()) return;
 
-    // ── Android: captura o evento beforeinstallprompt ─────────────────────
     if (isAndroid()) {
       const handler = (e) => {
-        e.preventDefault();             // impede o mini-infobar automático do Chrome
+        e.preventDefault();
         deferredPrompt.current = e;
         setPlatform("android");
         setVisible(true);
       };
       window.addEventListener("beforeinstallprompt", handler);
-
-      // Detecta instalação bem-sucedida
       window.addEventListener("appinstalled", () => {
         saveInstalled();
         setVisible(false);
       });
-
       return () => window.removeEventListener("beforeinstallprompt", handler);
     }
 
-    // ── iOS: exibe banner explicativo após delay ───────────────────────────
     if (isIOS() && isSafariBrowser()) {
       const t = setTimeout(() => {
         setPlatform("ios");
@@ -396,11 +326,8 @@ export default function PWAInstallBanner() {
     deferredPrompt.current.prompt();
     const { outcome } = await deferredPrompt.current.userChoice;
     deferredPrompt.current = null;
-    if (outcome === "accepted") {
-      saveInstalled();
-    } else {
-      saveDismiss();
-    }
+    if (outcome === "accepted") saveInstalled();
+    else saveDismiss();
     setVisible(false);
   }
 
@@ -414,17 +341,11 @@ export default function PWAInstallBanner() {
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
-      <div style={S.overlay} role="dialog" aria-modal="true"
-        aria-label="Instalar aplicativo">
+      <div style={S.overlay} role="dialog" aria-modal="true" aria-label="Instalar aplicativo">
         <div style={S.card}>
           <button style={S.closeBtn} onClick={handleDismiss} aria-label="Fechar">✕</button>
-
-          {platform === "ios" && (
-            <IOSBanner onDismiss={handleDismiss} />
-          )}
-          {platform === "android" && (
-            <AndroidBanner onInstall={handleInstall} onDismiss={handleDismiss} />
-          )}
+          {platform === "ios"     && <IOSBanner     onDismiss={handleDismiss} />}
+          {platform === "android" && <AndroidBanner onInstall={handleInstall} onDismiss={handleDismiss} />}
         </div>
       </div>
     </>
