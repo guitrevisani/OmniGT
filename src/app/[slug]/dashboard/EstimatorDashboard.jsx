@@ -118,10 +118,14 @@ function calculateTime(segs, wkg, ftpW, windMps = 0, cfg) {
   }
   const rawMin    = flatMin + upMin + downMin;
   const movingMin = Math.ceil(rawMin / 15) * 15;
-  const breakMin  = Math.floor(movingMin / 120) * 15;
+  const break2h   = Math.floor(movingMin / 120) * 15;
+  const break6h   = Math.floor(movingMin / 360) * 30;
+  const break12h  = Math.floor(movingMin / 720) * 360;
+  const breakMin  = break2h + break6h + break12h;
   const totalKm   = segs.reduce((s, g) => s + g.distanceM, 0) / 1000;
   return { movingMin, totalMin: movingMin + breakMin, flatMin, upMin, downMin, rawMin,
-           avgSpeedKmh: totalKm / (rawMin / 60), zones, IF: wkg / (ftpW / cfg.mass_kg) };
+           avgSpeedKmh: totalKm / (rawMin / 60), zones, IF: wkg / (ftpW / cfg.mass_kg),
+           break2h, break6h, break12h, breakMin };
 }
 
 function formatTime(min) {
@@ -335,7 +339,18 @@ function WkgControl({ value, onChange, ftpW, onFtpChange, cfg }) {
 // FTP não aparece aqui — está no WkgControl acima.
 // CdA e Crr visíveis mas desabilitados (evolução futura).
 
-function ConfigPanel({ cfg }) {
+function ConfigPanel({ cfg, onCfgChange }) {
+  const [locals, setLocals] = useState({ mass_kg: String(cfg.mass_kg), descent_kmh: String(cfg.descent_kmh) });
+  useEffect(() => {
+    setLocals({ mass_kg: String(cfg.mass_kg), descent_kmh: String(cfg.descent_kmh) });
+  }, [cfg.mass_kg, cfg.descent_kmh]);
+
+  const commit = (key) => {
+    const n = parseFloat(locals[key]);
+    if (!isNaN(n) && n > 0) onCfgChange({ ...cfg, [key]: n });
+    else setLocals(prev => ({ ...prev, [key]: String(cfg[key]) }));
+  };
+
   const fields = [
     { key:"mass_kg",     label:"MASSA (kg - ciclista + equipamento)", enabled: true  },
     { key:"descent_kmh", label:"VEL. DESCIDA (km/h)",                 enabled: true  },
@@ -356,8 +371,11 @@ function ConfigPanel({ cfg }) {
               {f.label}
             </div>
             <input
-              defaultValue={cfg[f.key]}
+              value={f.enabled ? (locals[f.key] ?? cfg[f.key]) : cfg[f.key]}
               disabled={!f.enabled}
+              onChange={f.enabled ? e => setLocals(prev => ({ ...prev, [f.key]: e.target.value })) : undefined}
+              onBlur={f.enabled ? () => commit(f.key) : undefined}
+              onKeyDown={f.enabled ? e => e.key === "Enter" && commit(f.key) : undefined}
               style={{ width:72, textAlign:"center", background:"#141820",
                 border:`1px solid ${f.enabled ? "#2d3748" : "#1a1e2a"}`,
                 borderRadius:6, color: f.enabled ? "#e2e8f0" : "#4a5568",
@@ -510,7 +528,7 @@ export default function EstimatorDashboard({ slug, eventName }) {
       `up ${result.upMin.toFixed(0)}min  flat ${result.flatMin.toFixed(0)}min  dn ${result.downMin.toFixed(0)}min`);
     drawCard(PAD+cardW+16, cy, cardW, H_CARDS-16, "#f6ad55",
       "TEMPO TOTAL", formatTime(result.totalMin),
-      `+${result.totalMin - result.movingMin}min paradas  ·  ${Math.floor(result.movingMin/120)}x 15min/2h`);
+      `+${result.totalMin - result.movingMin}min paradas  ·  ${Math.floor(result.movingMin/120)}x15min/2h${result.break6h>0?`  ·  ${Math.floor(result.movingMin/360)}x30min/6h`:""}${result.break12h>0?`  ·  ${Math.floor(result.movingMin/720)}x6h/12h`:""}`);
 
     // Zone strip
     cy += H_CARDS;
@@ -668,7 +686,7 @@ export default function EstimatorDashboard({ slug, eventName }) {
         )}
 
         {/* Parâmetros do sistema */}
-        {cfg && <ConfigPanel cfg={cfg} />}
+        {cfg && <ConfigPanel cfg={cfg} onCfgChange={setCfg} />}
 
         {/* Resultados */}
         {segments.length > 0 && result && cfg && (
@@ -696,6 +714,8 @@ export default function EstimatorDashboard({ slug, eventName }) {
                   { l:"DISTÂNCIA",   v:totalKm.toFixed(1)+" km" },
                   { l:"GANHO ALT.",  v:Math.round(totalGain)+" m" },
                   { l:"VMÉD GLOBAL", v:result.avgSpeedKmh.toFixed(1)+" km/h" },
+                  { l:"POTÊNCIA REF.", v:(wkg*cfg.mass_kg).toFixed(0)+"W · "+(wkg).toFixed(2)+"w/kg" },
+                  { l:"% DO FTP",    v:((wkg*cfg.mass_kg/ftpW)*100).toFixed(0)+"%" },
                   { l:"FATOR IF",    v:result.IF.toFixed(2) },
                   { l:"SUBIDAS",     v: climbs.length > 0
                       ? climbs.filter(c=>c.cat==="HC").length > 0
@@ -736,7 +756,9 @@ export default function EstimatorDashboard({ slug, eventName }) {
                   {formatTime(result.totalMin)}
                 </div>
                 <div style={{ fontFamily:"'DM Mono',monospace", fontSize:10, color:"#4a5568", marginTop:8 }}>
-                  +{result.totalMin - result.movingMin}min paradas · {Math.floor(result.movingMin/120)}× 15min/2h
+                  +{result.totalMin - result.movingMin}min paradas · {Math.floor(result.movingMin/120)}×15min/2h
+                  {result.break6h > 0 && ` · ${Math.floor(result.movingMin/360)}×30min/6h`}
+                  {result.break12h > 0 && ` · ${Math.floor(result.movingMin/720)}×6h/12h`}
                 </div>
               </div>
             </div>
@@ -757,7 +779,7 @@ export default function EstimatorDashboard({ slug, eventName }) {
                       {z.watts.toFixed(0)}W
                     </div>
                     <div style={{ fontFamily:"'DM Mono',monospace", fontSize:10, color:"#718096", marginTop:2 }}>
-                      IF {(z.watts/ftpW).toFixed(2)} · ~{wattsToSpeedKmh(z.watts, 0, 0, cfg).toFixed(0)} km/h plano
+                      IF {(z.watts/ftpW).toFixed(2)} · {((z.watts/ftpW)*100).toFixed(0)}% FTP · ~{wattsToSpeedKmh(z.watts, 0, 0, cfg).toFixed(0)} km/h plano
                     </div>
                   </div>
                 ))}
