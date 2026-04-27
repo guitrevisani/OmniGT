@@ -808,7 +808,12 @@ export default function EstimatorDashboard({ slug, eventName }) {
                 padding:"14px", marginBottom:12 }}>
                 <div style={{ fontFamily:"'DM Mono',monospace", fontSize:10, color:"#4a5568",
                   letterSpacing:1, marginBottom:10 }}>▲ SUBIDAS CATEGORIZADAS · CRITÉRIO STRAVA</div>
-                {climbs.map((c, i) => (
+                {climbs.map((c, i) => {
+                  const climbSpeedKmh = wattsToSpeedKmh(wkg * cfg.mass_kg, (c.avgGrade / 100) * K_ROLL, windMps, cfg);
+                  const climbTimeH    = c.lengthKm / climbSpeedKmh;
+                  const climbTimeMin  = Math.round(climbTimeH * 60);
+                  const vam           = Math.round(c.gainM / climbTimeH);
+                  return (
                   <div key={i} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 12px",
                     background:"#0a0c12", borderRadius:8, border:`1px solid ${c.color}33`,
                     marginBottom: i < climbs.length-1 ? 6 : 0 }}>
@@ -825,7 +830,7 @@ export default function EstimatorDashboard({ slug, eventName }) {
                         km {c.startKm.toFixed(1)} → {c.endKm.toFixed(1)}
                         <span style={{ marginLeft:10, color:"#4a5568" }}>score {c.score.toLocaleString()}</span>
                       </div>
-                      <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
+                      <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:5 }}>
                         {[["EXTENSÃO", c.lengthKm+" km"],["GANHO","+"+c.gainM+" m"],["MÉDIA",c.avgGrade+"%"]].map(([l,v]) => (
                           <span key={l} style={{ fontFamily:"'DM Mono',monospace", fontSize:11 }}>
                             <span style={{ color:"#4a5568" }}>{l}: </span>
@@ -833,10 +838,25 @@ export default function EstimatorDashboard({ slug, eventName }) {
                           </span>
                         ))}
                       </div>
+                      <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
+                        <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11 }}>
+                          <span style={{ color:"#4a5568" }}>VAM: </span>
+                          <span style={{ color:c.color, fontWeight:600 }}>{vam.toLocaleString()} m/h</span>
+                        </span>
+                        <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11 }}>
+                          <span style={{ color:"#4a5568" }}>TEMPO EST.: </span>
+                          <span style={{ color:c.color, fontWeight:600 }}>{formatTime(climbTimeMin)}</span>
+                        </span>
+                        <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11 }}>
+                          <span style={{ color:"#4a5568" }}>VEL.: </span>
+                          <span style={{ color:"#718096", fontWeight:500 }}>{climbSpeedKmh.toFixed(1)} km/h</span>
+                        </span>
+                      </div>
                     </div>
                     <div style={{ width:4, alignSelf:"stretch", borderRadius:2, background:c.color }} />
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
