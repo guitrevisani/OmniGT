@@ -147,28 +147,50 @@ function climbCategory(lengthM, avgGradePct) {
 
 function detectMajorClimbs(segs) {
   const climbs = [];
-  let inClimb = false, cGain = 0, cLen = 0, cStartKm = 0, distKm = 0;
+  const GAP_TOLERANCE_M = 500; // interrupções menores que isso são absorvidas na subida
+  let inClimb = false, cGain = 0, cLen = 0, cStartKm = 0, cEndKm = 0;
+  let gapLen = 0, gapGain = 0;
+  let distKm = 0;
+
+  const pushClimb = () => {
+    if (cLen >= 500) {
+      const avgGrade = (cGain / cLen) * 100;
+      const cat = climbCategory(cLen, avgGrade);
+      if (cat) climbs.push({
+        startKm: cStartKm, endKm: cEndKm,
+        gainM: Math.round(cGain), lengthKm: +(cLen/1000).toFixed(1),
+        avgGrade: +avgGrade.toFixed(1),
+        score: Math.round(cLen * avgGrade),
+        ...cat,
+      });
+    }
+  };
+
   for (const seg of segs) {
     if (seg.type === "climb") {
-      if (!inClimb) { inClimb = true; cStartKm = distKm; cGain = 0; cLen = 0; }
-      cGain += seg.gainM; cLen += seg.distanceM;
-    } else if (inClimb) {
-      if (cLen >= 500) {
-        const avgGrade = (cGain / cLen) * 100;
-        const cat = climbCategory(cLen, avgGrade);
-        if (cat) climbs.push({
-          startKm: cStartKm, endKm: distKm,
-          gainM: Math.round(cGain), lengthKm: +(cLen/1000).toFixed(1),
-          avgGrade: +avgGrade.toFixed(1),
-          score: Math.round(cLen * avgGrade),
-          ...cat,
-        });
+      if (!inClimb) {
+        inClimb = true; cStartKm = distKm; cGain = 0; cLen = 0;
+        gapLen = 0; gapGain = 0;
+      } else if (gapLen > 0) {
+        // retomada após pausa curta: absorve o gap na subida
+        cLen += gapLen; cGain += gapGain;
+        gapLen = 0; gapGain = 0;
       }
-      inClimb = false;
+      cGain += seg.gainM; cLen += seg.distanceM;
+      cEndKm = distKm + seg.distanceM / 1000;
+    } else if (inClimb) {
+      gapLen += seg.distanceM; gapGain += seg.gainM;
+      if (gapLen >= GAP_TOLERANCE_M) {
+        // gap longo o suficiente: encerra a subida onde ela de fato terminou
+        pushClimb();
+        inClimb = false; gapLen = 0; gapGain = 0;
+      }
     }
     distKm += seg.distanceM / 1000;
   }
-  return climbs.sort((a, b) => b.score - a.score);
+  if (inClimb) pushClimb();
+
+  return climbs.sort((a, b) => a.startKm - b.startKm);
 }
 
 // ─── Cor por declive ──────────────────────────────────────────────────────────
@@ -808,12 +830,7 @@ export default function EstimatorDashboard({ slug, eventName }) {
                 padding:"14px", marginBottom:12 }}>
                 <div style={{ fontFamily:"'DM Mono',monospace", fontSize:10, color:"#4a5568",
                   letterSpacing:1, marginBottom:10 }}>▲ SUBIDAS CATEGORIZADAS · CRITÉRIO STRAVA</div>
-                {climbs.map((c, i) => {
-                  const climbSpeedKmh = wattsToSpeedKmh(wkg * cfg.mass_kg, (c.avgGrade / 100) * K_ROLL, windMps, cfg);
-                  const climbTimeH    = c.lengthKm / climbSpeedKmh;
-                  const climbTimeMin  = Math.round(climbTimeH * 60);
-                  const vam           = Math.round(c.gainM / climbTimeH);
-                  return (
+                {climbs.map((c, i) => (
                   <div key={i} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 12px",
                     background:"#0a0c12", borderRadius:8, border:`1px solid ${c.color}33`,
                     marginBottom: i < climbs.length-1 ? 6 : 0 }}>
@@ -830,7 +847,7 @@ export default function EstimatorDashboard({ slug, eventName }) {
                         km {c.startKm.toFixed(1)} → {c.endKm.toFixed(1)}
                         <span style={{ marginLeft:10, color:"#4a5568" }}>score {c.score.toLocaleString()}</span>
                       </div>
-                      <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:5 }}>
+                      <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
                         {[["EXTENSÃO", c.lengthKm+" km"],["GANHO","+"+c.gainM+" m"],["MÉDIA",c.avgGrade+"%"]].map(([l,v]) => (
                           <span key={l} style={{ fontFamily:"'DM Mono',monospace", fontSize:11 }}>
                             <span style={{ color:"#4a5568" }}>{l}: </span>
@@ -838,25 +855,10 @@ export default function EstimatorDashboard({ slug, eventName }) {
                           </span>
                         ))}
                       </div>
-                      <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
-                        <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11 }}>
-                          <span style={{ color:"#4a5568" }}>VAM: </span>
-                          <span style={{ color:c.color, fontWeight:600 }}>{vam.toLocaleString()} m/h</span>
-                        </span>
-                        <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11 }}>
-                          <span style={{ color:"#4a5568" }}>TEMPO EST.: </span>
-                          <span style={{ color:c.color, fontWeight:600 }}>{formatTime(climbTimeMin)}</span>
-                        </span>
-                        <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11 }}>
-                          <span style={{ color:"#4a5568" }}>VEL.: </span>
-                          <span style={{ color:"#718096", fontWeight:500 }}>{climbSpeedKmh.toFixed(1)} km/h</span>
-                        </span>
-                      </div>
                     </div>
                     <div style={{ width:4, alignSelf:"stretch", borderRadius:2, background:c.color }} />
                   </div>
-                  );
-                })}
+                ))}
               </div>
             )}
 
