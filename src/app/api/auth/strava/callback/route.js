@@ -1,28 +1,30 @@
-// /src/app/api/auth/strava/callback/route.js
-import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
+// src/app/api/auth/strava/callback/route.js
+import { NextResponse }  from "next/server";
+import { query }         from "@/lib/db";
+import { queryClient }   from "@/lib/db-client";  // conexão banco do cliente
 import { createSession } from "@/lib/session";
 
 export const runtime = "nodejs";
+
+const REQUIRED_CLUB_ID = 1032654;
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const code        = searchParams.get("code");
   const eventSlug   = searchParams.get("state");
-  const stravaError = searchParams.get("error");        // Strava retorna ?error=access_denied
+  const stravaError = searchParams.get("error");
   const goalKm      = searchParams.get("goal_km");
   const goalHours   = searchParams.get("goal_hours");
   const keepGoals   = searchParams.get("keep_goals") !== "0";
   const pushConsent = searchParams.get("push_consent") === "1";
 
   console.log("[Callback] searchParams:", {
-    code:        code ? code.substring(0, 8) + "..." : null,
+    code:      code ? code.substring(0, 8) + "..." : null,
     stravaError,
     eventSlug,
-    allParams:   Object.fromEntries(searchParams.entries()),
+    allParams: Object.fromEntries(searchParams.entries()),
   });
 
-  // Strava rejeitou — redireciona para o register com aviso
   if (stravaError) {
     const slug = eventSlug || "";
     return NextResponse.redirect(
@@ -31,7 +33,10 @@ export async function GET(request) {
   }
 
   if (!code || !eventSlug) {
-    return NextResponse.json({ error: "Parâmetros ausentes: code ou state" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Parâmetros ausentes: code ou state" },
+      { status: 400 }
+    );
   }
 
   try {
@@ -84,13 +89,60 @@ export async function GET(request) {
     const { athlete, access_token, refresh_token, expires_at, scope } = tokenData;
     const stravaId = athlete.id;
 
-    const genderFromStrava = athlete.sex === "M"
-      ? "masculino"
-      : athlete.sex === "F"
-        ? "feminino"
-        : null;
+    const genderFromStrava =
+      athlete.sex === "M" ? "masculino" :
+      athlete.sex === "F" ? "feminino"  : null;
 
-    // ── 3. UPSERT atleta ──────────────────────────────────
+    // URL de perfil do token (fallback se a chamada completa falhar)
+    let profileUrl = athlete.profile || athlete.profile_medium || null;
+
+    // ── 3. GET /athlete — FTP, peso e foto em alta res ────
+    let ftpW     = null;
+    let weightKg = null;
+
+    try {
+      const athleteRes = await fetch("https://www.strava.com/api/v3/athlete", {
+        headers: { Authorization: `Bearer ${access_token}` },
+      });
+
+      if (athleteRes.ok) {
+        const full = await athleteRes.json();
+        ftpW       = full.ftp    ? Number(full.ftp)    : null;
+        weightKg   = full.weight ? Number(full.weight) : null;
+        // profile (256×256) tem melhor resolução que profile_medium (62×62)
+        profileUrl = full.profile || full.profile_medium || profileUrl;
+      } else {
+        console.warn("[Callback] GET /athlete falhou:", athleteRes.status);
+      }
+    } catch (err) {
+      console.warn("[Callback] Erro ao buscar dados completos do atleta:", err);
+    }
+
+    // ── 4. Verificar membership no clube (camp) ───────────
+    // GET /athlete/clubs funciona com escopo "read" e retorna
+    // todos os clubes do atleta autenticado (máx 100 por página).
+    let isMember = false;
+
+    if (moduleSlug === "camp") {
+      try {
+        const clubsRes = await fetch(
+          "https://www.strava.com/api/v3/athlete/clubs?per_page=100",
+          { headers: { Authorization: `Bearer ${access_token}` } }
+        );
+
+        if (clubsRes.ok) {
+          const clubs = await clubsRes.json();
+          isMember = Array.isArray(clubs) &&
+            clubs.some(c => Number(c.id) === REQUIRED_CLUB_ID);
+        } else {
+          console.warn("[Callback] GET /athlete/clubs falhou:", clubsRes.status);
+        }
+      } catch (err) {
+        console.warn("[Callback] Erro ao verificar clube:", err);
+      }
+    }
+
+    // ── 5. UPSERT atleta (banco da engine) ────────────────
     await query(
       `INSERT INTO athletes (
          strava_id, firstname, lastname,
@@ -109,12 +161,41 @@ export async function GET(request) {
          gender         = COALESCE(athletes.gender, EXCLUDED.gender),
          email          = COALESCE(athletes.email,  EXCLUDED.email),
          updated_at     = now()`,
-      [stravaId, athlete.firstname, athlete.lastname,
-       access_token, refresh_token, expires_at, scope || null,
-       genderFromStrava, athlete.email || null]
+      [
+        stravaId, athlete.firstname, athlete.lastname,
+        access_token, refresh_token, expires_at, scope || null,
+        genderFromStrava, athlete.email || null,
+      ]
     );
 
-    // ── 4. Determinar role ────────────────────────────────
+    // ── 6. UPSERT participante (banco do cliente) ─────────
+    // email/whatsapp/emergência chegam depois via formulário de inscrição.
+    // Não bloqueia o fluxo principal se o banco do cliente falhar.
+    try {
+      await queryClient(
+        `INSERT INTO jordancamp26_participantes (
+           strava_id, firstname, lastname, profile_url,
+           gender, ftp_w, weight_kg, event_slug
+         )
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (strava_id) DO UPDATE SET
+           firstname   = EXCLUDED.firstname,
+           lastname    = EXCLUDED.lastname,
+           profile_url = EXCLUDED.profile_url,
+           gender      = COALESCE(jordancamp26_participantes.gender, EXCLUDED.gender),
+           ftp_w       = COALESCE(EXCLUDED.ftp_w,     jordancamp26_participantes.ftp_w),
+           weight_kg   = COALESCE(EXCLUDED.weight_kg, jordancamp26_participantes.weight_kg),
+           updated_at  = now()`,
+        [
+          stravaId, athlete.firstname, athlete.lastname, profileUrl,
+          genderFromStrava, ftpW, weightKg, eventSlug,
+        ]
+      );
+    } catch (err) {
+      console.error("[Callback] Erro ao semear banco do cliente:", err);
+    }
+
+    // ── 7. Determinar role ────────────────────────────────
     const providerStravaId = Number(process.env.PROVIDER_STRAVA_ID);
     let role;
     if (stravaId === providerStravaId) {
@@ -125,7 +206,7 @@ export async function GET(request) {
       role = "user";
     }
 
-    // ── 5. UPSERT athlete_events ──────────────────────────
+    // ── 8. UPSERT athlete_events ──────────────────────────
     await query(
       `INSERT INTO athlete_events (strava_id, event_id, role, status, push_consent)
        VALUES ($1,$2,$3,'active',$4)
@@ -139,9 +220,8 @@ export async function GET(request) {
       [stravaId, eventId, role, pushConsent]
     );
 
-    // ── 6. Metas + backfill (apenas módulo agenda) ────────
+    // ── 9. Metas + backfill (apenas módulo agenda) ────────
     if (moduleSlug === "agenda") {
-
       if (keepGoals) {
         const existing = await query(
           `SELECT goal_distance_km FROM agenda_goals
@@ -163,7 +243,6 @@ export async function GET(request) {
           });
           return response;
         }
-
       } else {
         const parsedGoalKm      = parseFloat(goalKm)    || 0;
         const parsedGoalHours   = parseFloat(goalHours) || 0;
@@ -193,20 +272,28 @@ export async function GET(request) {
       }).catch(err => console.error("[Callback] Erro ao disparar backfill:", err));
     }
 
-    // ── 7. Criar sessão no banco ──────────────────────────
+    // ── 10. Criar sessão ──────────────────────────────────
     const sessionToken = await createSession(stravaId, eventId, eventEndDate);
 
-    // ── 8. Cookie + redirect ──────────────────────────────
+    // ── 11. Redirect pós-OAuth ────────────────────────────
     let redirectPath = `/${eventSlug}`;
+
     if (moduleSlug === "camp") {
       const profile = await query(
         `SELECT id FROM camp_athlete_profiles
          WHERE strava_id = $1 AND event_id = $2`,
         [stravaId, eventId]
       );
-      redirectPath = profile.rows.length > 0
-        ? `/${eventSlug}/dashboard`
-        : `/${eventSlug}/register`;
+
+      if (profile.rows.length > 0) {
+        // Já completou o formulário → dashboard
+        redirectPath = `/${eventSlug}/dashboard`;
+      } else {
+        // Ainda não inscrito → apresentação com status de membro na URL.
+        // CampPresentation lê ?member=1|0 para exibir o CTA correto
+        // sem precisar de uma segunda chamada ao Strava.
+        redirectPath = `/${eventSlug}?member=${isMember ? "1" : "0"}`;
+      }
     }
 
     const response = NextResponse.redirect(new URL(redirectPath, request.url));

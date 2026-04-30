@@ -1,26 +1,67 @@
+"use client";
+
 // src/app/[slug]/CampPresentation.jsx
 //
-// Server Component — apresentação pública do Camp.
-// Todos os dados chegam via props do page.js.
-// Não requer autenticação.
+// Apresentação do camp. Lê ?member=1|0 da URL (injetado pelo callback)
+// para decidir entre:
+//   - Botão de pagamento   → atleta é membro do clube Strava exigido
+//   - CTA "entrar no clube" → atleta NÃO é membro
+//   - Botão "conectar Strava" → atleta ainda não autenticou (sem ?member)
 
-import styles from "./CampPresentation.module.css";
+import { useSearchParams } from "next/navigation";
+import { Suspense }        from "react";
 
-function formatDateRange(start, end) {
-  const s = new Date(start + "T12:00:00");
-  const e = new Date(end   + "T12:00:00");
-  const opts = { day: "numeric", month: "long" };
-  const year = s.getFullYear();
-  if (s.getMonth() === e.getMonth()) {
-    return `${s.getDate()} – ${e.toLocaleDateString("pt-BR", opts)} de ${year}`;
+const STRAVA_CLUB_URL = "https://www.strava.com/clubs/1032654";
+
+// Recebido de page.js via event_configs.metadata.payment_url
+// Passado como prop para desacoplar do componente
+function CtaBlock({ slug, paymentUrl }) {
+  const searchParams = useSearchParams();
+  const memberParam  = searchParams.get("member"); // "1" | "0" | null
+
+  // Ainda não passou pelo OAuth
+  if (memberParam === null) {
+    return (
+      <a
+        href={`/api/auth/strava/start?event=${slug}`}
+        className="btn btn-strava"
+      >
+        Conectar com Strava
+      </a>
+    );
   }
-  return `${s.toLocaleDateString("pt-BR", opts)} – ${e.toLocaleDateString("pt-BR", opts)}, ${year}`;
-}
 
-function daysUntil(dateStr) {
-  const today  = new Date();
-  const target = new Date(dateStr + "T12:00:00");
-  return Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+  // Autenticado e é membro do clube → link de pagamento
+  if (memberParam === "1") {
+    return (
+      <a
+        href={paymentUrl || "#"}
+        className="btn btn-primary"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Confirmar inscrição
+      </a>
+    );
+  }
+
+  // Autenticado mas NÃO é membro → CTA do clube
+  return (
+    <div className="cta-club">
+      <p className="cta-club__msg">
+        A inscrição no Jordan Camp é exclusiva para membros do clube Strava
+        Jordan Cycling. Entre no clube para liberar a confirmação.
+      </p>
+      <a
+        href={STRAVA_CLUB_URL}
+        className="btn btn-club"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Entrar no clube Strava
+      </a>
+    </div>
+  );
 }
 
 export default function CampPresentation({
@@ -28,127 +69,51 @@ export default function CampPresentation({
   name,
   startDate,
   endDate,
-  location   = null,
-  objective  = null,
-  websiteUrl = null,
-  maxDays    = null,
+  location,
+  objective,
+  websiteUrl,
+  maxDays,
+  paymentUrl,   // event_configs.metadata.payment_url
 }) {
-  const dateRange = startDate && endDate ? formatDateRange(startDate, endDate) : null;
-  const days      = startDate ? daysUntil(startDate) : null;
-  const countdown = days != null && days > 0 ? days : null;
-
   return (
-    <div className={styles.page}>
+    <section className="camp-presentation">
+      <h1 className="camp-presentation__title">{name}</h1>
 
-      {/* ── Hero ─────────────────────────────────────────── */}
-      <section className={styles.hero}>
-        <div className={styles.heroInner}>
+      {location && (
+        <p className="camp-presentation__location">{location}</p>
+      )}
 
-          <div className={styles.heroBadge}>
-            <span className={styles.heroBadgeDot} />
-            OGT Camp
-          </div>
+      {(startDate || endDate) && (
+        <p className="camp-presentation__dates">
+          {startDate} {endDate && endDate !== startDate ? `→ ${endDate}` : ""}
+        </p>
+      )}
 
-          <h1 className={styles.heroTitle}>{name}</h1>
+      {maxDays && (
+        <p className="camp-presentation__days">{maxDays} dias de programa</p>
+      )}
 
-          <div className={styles.heroMeta}>
-            {location && (
-              <span className={styles.heroMetaItem}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-                  <circle cx="12" cy="10" r="3"/>
-                </svg>
-                {location}
-              </span>
-            )}
-            {dateRange && (
-              <span className={styles.heroMetaItem}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                  <line x1="16" y1="2" x2="16" y2="6"/>
-                  <line x1="8"  y1="2" x2="8"  y2="6"/>
-                  <line x1="3"  y1="10" x2="21" y2="10"/>
-                </svg>
-                {dateRange}
-              </span>
-            )}
-            {maxDays && (
-              <span className={styles.heroMetaItem}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10"/>
-                  <polyline points="12 6 12 12 16 14"/>
-                </svg>
-                {maxDays} dias
-              </span>
-            )}
-          </div>
+      {objective && (
+        <p className="camp-presentation__objective">{objective}</p>
+      )}
 
-          {countdown && (
-            <div className={styles.countdown}>
-              <span className={styles.countdownValue}>{countdown}</span>
-              <span className={styles.countdownLabel}>
-                {countdown === 1 ? "dia para o início" : "dias para o início"}
-              </span>
-            </div>
-          )}
-        </div>
+      {websiteUrl && (
+        <a
+          href={websiteUrl}
+          className="camp-presentation__website"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Saiba mais
+        </a>
+      )}
 
-        <div className={styles.heroGradient} aria-hidden />
-      </section>
-
-      {/* ── Body ─────────────────────────────────────────── */}
-      <div className={styles.body}>
-
-        {objective && (
-          <section className={styles.section}>
-            <h2 className={styles.sectionTitle}>Sobre o camp</h2>
-            <p className={styles.sectionText}>{objective}</p>
-          </section>
-        )}
-
-        {websiteUrl && (
-          <section className={styles.section}>
-            <a
-              href={websiteUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.externalLink}
-            >
-              <span>Saiba mais sobre o evento</span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                <polyline points="15 3 21 3 21 9"/>
-                <line x1="10" y1="14" x2="21" y2="3"/>
-              </svg>
-            </a>
-          </section>
-        )}
-
-        <section className={styles.cta}>
-          <p className={styles.ctaText}>
-            A inscrição é feita via Strava. Você será redirecionado para autorizar
-            o acesso e preencher o formulário de inscrição.
-          </p>
-          <a
-            href={`/api/auth/strava/start?event=${slug}`}
-            className={styles.ctaButton}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/>
-            </svg>
-            Inscrever-se com Strava
-          </a>
-        </section>
-
-        <footer className={styles.footer}>
-          <span>OGT · Omni GT</span>
-        </footer>
-
+      <div className="camp-presentation__cta">
+        {/* useSearchParams exige Suspense quando está num Server Component pai */}
+        <Suspense fallback={null}>
+          <CtaBlock slug={slug} paymentUrl={paymentUrl} />
+        </Suspense>
       </div>
-    </div>
+    </section>
   );
 }

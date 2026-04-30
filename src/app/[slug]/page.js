@@ -56,6 +56,7 @@ export default async function EventIndexPage({ params }) {
         objective={metadata.objective    || null}
         websiteUrl={metadata.website_url || null}
         maxDays={metadata.max_days       || null}
+        paymentUrl={metadata.payment_url || null}
       />
     );
   }
