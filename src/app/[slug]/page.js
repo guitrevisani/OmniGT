@@ -39,8 +39,8 @@ export default async function EventIndexPage({ params }) {
 
     if (session) {
       const member = await query(
-        `SELECT status FROM athlete_events
-         WHERE strava_id = $1 AND event_id = $2 AND status = 'active'`,
+        `SELECT id FROM camp_athlete_profiles
+         WHERE strava_id = $1 AND event_id = $2`,
         [session.stravaId, event.id]
       );
       if (member.rows.length > 0) redirect(`/${slug}/dashboard`);
