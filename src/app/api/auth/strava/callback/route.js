@@ -42,9 +42,12 @@ export async function GET(request) {
   try {
     // ── 1. Buscar evento + módulo ─────────────────────────
     const eventResult = await query(
-      `SELECT e.id, e.end_date, e.owner_strava_id, e.required_scopes, m.slug AS module_slug
+      `SELECT e.id, e.end_date, e.owner_strava_id, e.required_scopes,
+              m.slug AS module_slug,
+              ec.metadata
        FROM events e
        JOIN modules m ON m.id = e.module_id
+       LEFT JOIN event_configs ec ON ec.event_id = e.id
        WHERE e.slug = $1 AND e.is_active = true`,
       [eventSlug]
     );
@@ -57,6 +60,8 @@ export async function GET(request) {
     const eventId      = event.id;
     const moduleSlug   = event.module_slug;
     const eventEndDate = event.end_date;
+    const metadata     = event.metadata || {};
+    const clientDbUrl  = metadata.client_db_url || null;
 
     // ── 2. Trocar code por tokens ─────────────────────────
     const tokenRes = await fetch("https://www.strava.com/oauth/token", {
@@ -173,6 +178,7 @@ export async function GET(request) {
     // Não bloqueia o fluxo principal se o banco do cliente falhar.
     try {
       await queryClient(
+        clientDbUrl,
         `INSERT INTO jordancamp26_participantes (
            strava_id, firstname, lastname, profile_url,
            gender, ftp_w, weight_kg, event_slug
@@ -292,7 +298,8 @@ export async function GET(request) {
         // Ainda não inscrito → apresentação com status de membro na URL.
         // CampPresentation lê ?member=1|0 para exibir o CTA correto
         // sem precisar de uma segunda chamada ao Strava.
-        redirectPath = `/${eventSlug}?member=${isMember ? "1" : "0"}`;
+        const safeName = encodeURIComponent(athlete.firstname || "");
+        redirectPath = `/${eventSlug}?member=${isMember ? "1" : "0"}&name=${safeName}`;
       }
     }
 

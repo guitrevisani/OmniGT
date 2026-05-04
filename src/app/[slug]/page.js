@@ -38,12 +38,14 @@ export default async function EventIndexPage({ params }) {
     const session = await getSession();
 
     if (session) {
-      const member = await query(
+      // Usa camp_athlete_profiles (não athlete_events) para determinar
+      // se o atleta já completou o formulário de inscrição deste evento.
+      const profile = await query(
         `SELECT id FROM camp_athlete_profiles
          WHERE strava_id = $1 AND event_id = $2`,
         [session.stravaId, event.id]
       );
-      if (member.rows.length > 0) redirect(`/${slug}/dashboard`);
+      if (profile.rows.length > 0) redirect(`/${slug}/dashboard`);
     }
 
     return (
@@ -52,11 +54,10 @@ export default async function EventIndexPage({ params }) {
         name={event.name}
         startDate={event.start_date}
         endDate={event.end_date}
-        location={metadata.location      || null}
-        objective={metadata.objective    || null}
-        websiteUrl={metadata.website_url || null}
-        maxDays={metadata.max_days       || null}
-        paymentUrl={metadata.payment_url || null}
+        location={metadata.location        || null}
+        description={metadata.description  || null}
+        websiteUrl={metadata.website_url   || null}
+        maxDays={metadata.max_days         || null}
       />
     );
   }
