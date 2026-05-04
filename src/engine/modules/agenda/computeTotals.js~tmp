@@ -19,7 +19,6 @@ export function computeTotals({ daily }) {
 
   for (const d of daily) {
     totalDistanceM     += d.total_distance_m     || 0;
-    totalMovingTimeSec += d.total_moving_time_sec || 0;
     totalElevationM    += d.total_elevation_gain_m || 0;
 
     if ((d.total_moving_time_sec || 0) >= 900) {

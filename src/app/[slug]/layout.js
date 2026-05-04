@@ -1,15 +1,6 @@
 // /src/app/[slug]/layout.js
 import { getEvent } from "@/lib/events"
 
-/*export async function generateMetadata({ params }, parent) {
-  const { slug } = await params.slug
-  const event = await getEvent(params.slug)
-  console.log("generateMetadata executou:", params.slug)
-
-  return {
-    title: `encontrado`,
-  }
-}*/
 export async function generateMetadata(props) {
   const { slug } = await props.params
   const event = await getEvent(slug)

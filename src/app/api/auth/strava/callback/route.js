@@ -18,13 +18,6 @@ export async function GET(request) {
   const keepGoals   = searchParams.get("keep_goals") !== "0";
   const pushConsent = searchParams.get("push_consent") === "1";
 
-  console.log("[Callback] searchParams:", {
-    code:      code ? code.substring(0, 8) + "..." : null,
-    stravaError,
-    eventSlug,
-    allParams: Object.fromEntries(searchParams.entries()),
-  });
-
   if (stravaError) {
     const slug = eventSlug || "";
     return NextResponse.redirect(
@@ -77,12 +70,6 @@ export async function GET(request) {
 
     const tokenData = await tokenRes.json();
 
-    console.log("[Callback] Strava token response:", {
-      status: tokenRes.status,
-      ok:     tokenRes.ok,
-      error:  tokenData.message || null,
-      errors: tokenData.errors  || null,
-    });
 
     if (!tokenRes.ok || !tokenData.access_token || !tokenData.athlete) {
       return NextResponse.json(
