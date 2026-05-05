@@ -1,14 +1,11 @@
-// src/app/api/waitlist/route.js
+// src/app/api/interest/route.js
 //
-// Recebe nome, email e whatsapp da landing page externa
-// e grava na tabela waitlist do banco do cliente.
-//
-// A client_db_url vem de event_configs.metadata — mesma
-// abordagem do callback, sem ENV VARs por cliente.
+// Registra interesse no segundo camp (ainda sem data/opções definidas).
+// Grava em registrations com status = 'waitlist'.
+// option é null pois o evento ainda não tem opções configuradas.
 
 import { NextResponse } from "next/server";
 import { query }        from "@/lib/db";
-import { queryClient }  from "@/lib/db-client";
 
 export const runtime = "nodejs";
 
@@ -21,7 +18,6 @@ function cors(response) {
   return response;
 }
 
-// Preflight
 export async function OPTIONS() {
   return cors(new NextResponse(null, { status: 204 }));
 }
@@ -30,46 +26,50 @@ export async function POST(request) {
   try {
     const { name, email, whatsapp, event_slug } = await request.json();
 
-    if (!name || !email || !event_slug) {
-      return cors(
-        NextResponse.json({ error: "name, email e event_slug são obrigatórios" }, { status: 400 })
-      );
-    }
+    if (!name)       return cors(NextResponse.json({ error: "Nome é obrigatório" },       { status: 400 }));
+    if (!email)      return cors(NextResponse.json({ error: "E-mail é obrigatório" },     { status: 400 }));
+    if (!event_slug) return cors(NextResponse.json({ error: "event_slug é obrigatório" }, { status: 400 }));
 
-    // Busca client_db_url no metadata do evento
     const eventResult = await query(
-      `SELECT ec.metadata
-       FROM events e
-       LEFT JOIN event_configs ec ON ec.event_id = e.id
-       WHERE e.slug = $1 AND e.is_active = true`,
+      `SELECT id FROM events WHERE slug = $1 AND is_active = true`,
       [event_slug]
     );
 
     if (eventResult.rows.length === 0) {
-      return cors(
-        NextResponse.json({ error: "Evento não encontrado" }, { status: 404 })
-      );
+      return cors(NextResponse.json({ error: "Evento não encontrado" }, { status: 404 }));
     }
 
-    const metadata     = eventResult.rows[0].metadata || {};
-    const clientDbUrl  = metadata.client_db_url || null;
+    // Separa nome em firstname/lastname (melhor esforço)
+    const parts     = name.trim().split(/\s+/);
+    const firstname = parts[0];
+    const lastname  = parts.slice(1).join(" ") || null;
 
-    await queryClient(
-      clientDbUrl,
-      `INSERT INTO waitlist (name, email, whatsapp, event_slug)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (email, event_slug) DO NOTHING`,
-      [name.trim(), email.trim().toLowerCase(), whatsapp?.trim() || null, event_slug]
+    await query(
+      `INSERT INTO registrations (
+         event_slug, option,
+         firstname, lastname,
+         email, whatsapp,
+         status
+       )
+       VALUES ($1, NULL, $2, $3, $4, $5, 'waitlist')
+       ON CONFLICT (email, event_slug) DO UPDATE SET
+         firstname  = EXCLUDED.firstname,
+         lastname   = COALESCE(EXCLUDED.lastname, registrations.lastname),
+         whatsapp   = COALESCE(EXCLUDED.whatsapp, registrations.whatsapp),
+         updated_at = now()`,
+      [
+        event_slug,
+        firstname,
+        lastname,
+        email.trim().toLowerCase(),
+        whatsapp?.trim() || null,
+      ]
     );
 
-    return cors(
-      NextResponse.json({ ok: true })
-    );
+    return cors(NextResponse.json({ ok: true }));
 
   } catch (err) {
-    console.error("[waitlist] Erro:", err);
-    return cors(
-      NextResponse.json({ error: "Erro interno" }, { status: 500 })
-    );
+    console.error("[interest] Erro:", err);
+    return cors(NextResponse.json({ error: "Erro interno" }, { status: 500 }));
   }
 }
