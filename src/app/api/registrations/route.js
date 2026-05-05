@@ -53,7 +53,7 @@ export async function POST(request) {
 
     // ── Busca evento + metadata ───────────────────────────
     const eventResult = await query(
-      `SELECT e.id, ec.metadata
+      `SELECT e.id, e.name, ec.metadata
        FROM events e
        LEFT JOIN event_configs ec ON ec.event_id = e.id
        WHERE e.slug = $1 AND e.is_active = true`,
@@ -64,8 +64,9 @@ export async function POST(request) {
       return cors(NextResponse.json({ error: "Evento não encontrado" }, { status: 404 }));
     }
 
-    const metadata = eventResult.rows[0].metadata || {};
-    const limits   = metadata.limits || null;
+    const metadata   = eventResult.rows[0].metadata || {};
+    const eventName  = eventResult.rows[0].name || "";
+    const limits     = metadata.limits || null;
 
     // ── Verifica limites ──────────────────────────────────
     if (limits) {
@@ -103,7 +104,7 @@ export async function POST(request) {
     };
 
     // ── Insere inscrição ──────────────────────────────────
-    await query(
+    const insertResult = await query(
       `INSERT INTO registrations (
          event_slug, option,
          firstname, lastname,
@@ -123,7 +124,8 @@ export async function POST(request) {
          emergency_name  = EXCLUDED.emergency_name,
          emergency_phone = EXCLUDED.emergency_phone,
          extra           = EXCLUDED.extra,
-         updated_at      = now()`,
+         updated_at      = now()
+       RETURNING id`,
       [
         event_slug, option,
         firstname.trim(), lastname.trim(),
@@ -136,10 +138,17 @@ export async function POST(request) {
       ]
     );
 
-    // ── Busca payment_url para o redirect ─────────────────
-    const paymentUrl = metadata.payment_url || null;
+    // ── Busca id gerado e monta response ─────────────────
+    const registrationId = insertResult.rows[0]?.id || null;
+    const paymentUrl     = metadata.payment_url || null;
 
-    return cors(NextResponse.json({ ok: true, payment_url: paymentUrl }));
+    return cors(NextResponse.json({
+      ok:              true,
+      registration_id: registrationId,
+      event_name:      eventName,
+      option,
+      payment_url:     paymentUrl,
+    }));
 
   } catch (err) {
     console.error("[registrations] Erro:", err);
