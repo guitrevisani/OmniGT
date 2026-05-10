@@ -259,12 +259,12 @@ async function sendConfirmationEmail(reg) {
               <tr>
                 <td style="padding-right:1rem;vertical-align:middle">
                   <a href="https://www.cobix.com.br" target="_blank">
-                    <img src="https://camps.treine.com.gt/img/cobix.png" alt="COBIX" width="115" height="40" style="display:block;border:0;filter:grayscale(1);opacity:.8" />
+                    <img src="https://camps.treine.com.gt/img/cobix.png" alt="COBIX" width="115" height="40" style="display:block;border:0" />
                   </a>
                 </td>
                 <td style="vertical-align:middle">
                   <a href="https://www.flwst.com.br" target="_blank">
-                    <img src="https://camps.treine.com.gt/img/flwst.png" alt="FLWST" width="40" height="40" style="display:block;border:0;filter:grayscale(1);opacity:.8" />
+                    <img src="https://camps.treine.com.gt/img/flwst.png" alt="FLWST" width="40" height="40" style="display:block;border:0" />
                   </a>
                 </td>
               </tr>
