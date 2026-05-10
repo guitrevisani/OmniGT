@@ -38,7 +38,7 @@ Thumbs.db
 .*~tmp
 *~tmp
 .js*~tmp
-.md
+*.md
 
 # Local scripts (não sobem para o repo)
 scripts/

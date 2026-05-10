@@ -40,6 +40,12 @@ export async function POST(request) {
       hr_max,
       emergency_name,
       emergency_phone,
+      birth_date,
+      cpf,
+      health_insurance,
+      health_card,
+      accommodation,
+      room_partner,
       extra,
     } = body;
 
@@ -111,20 +117,29 @@ export async function POST(request) {
          email, whatsapp,
          physiological,
          emergency_name, emergency_phone,
+         birth_date, cpf,
+         health_insurance, health_card,
+         accommodation, room_partner,
          extra,
          status
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending')
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'pending')
        ON CONFLICT (email, event_slug) DO UPDATE SET
-         option          = EXCLUDED.option,
-         firstname       = EXCLUDED.firstname,
-         lastname        = EXCLUDED.lastname,
-         whatsapp        = EXCLUDED.whatsapp,
-         physiological   = EXCLUDED.physiological,
-         emergency_name  = EXCLUDED.emergency_name,
-         emergency_phone = EXCLUDED.emergency_phone,
-         extra           = EXCLUDED.extra,
-         updated_at      = now()
+         option           = EXCLUDED.option,
+         firstname        = EXCLUDED.firstname,
+         lastname         = EXCLUDED.lastname,
+         whatsapp         = EXCLUDED.whatsapp,
+         physiological    = EXCLUDED.physiological,
+         emergency_name   = EXCLUDED.emergency_name,
+         emergency_phone  = EXCLUDED.emergency_phone,
+         birth_date       = EXCLUDED.birth_date,
+         cpf              = EXCLUDED.cpf,
+         health_insurance = EXCLUDED.health_insurance,
+         health_card      = EXCLUDED.health_card,
+         accommodation    = EXCLUDED.accommodation,
+         room_partner     = EXCLUDED.room_partner,
+         extra            = EXCLUDED.extra,
+         updated_at       = now()
        RETURNING id`,
       [
         event_slug, option,
@@ -134,6 +149,12 @@ export async function POST(request) {
         Object.keys(physiological).length > 0 ? JSON.stringify(physiological) : null,
         emergency_name?.trim()  || null,
         emergency_phone?.trim() || null,
+        birth_date             || null,
+        cpf?.trim()            || null,
+        health_insurance?.trim() || null,
+        health_card?.trim()    || null,
+        accommodation          || null,
+        room_partner ? JSON.stringify(room_partner) : null,
         extra ? JSON.stringify(extra) : null,
       ]
     );
