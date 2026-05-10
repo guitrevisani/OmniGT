@@ -60,7 +60,29 @@ export async function POST(request) {
     return cors(NextResponse.json({ error: "Unauthorized" }, { status: 401 }));
   }
 
-  const { registration_id, method } = await request.json();
+  const body = await request.json();
+  const { registration_id, method } = body;
+
+  // ── Modo de teste — dispara email sem tocar no banco ──
+  if (body.test === true) {
+    const testReg = {
+      id:            0,
+      firstname:     body.firstname    || "Teste",
+      lastname:      body.lastname     || "Atleta",
+      email:         body.email        || null,
+      option:        body.option       || "1d",
+      accommodation: body.accommodation || null,
+      room_partner:  null,
+      status:        "pending",
+    };
+
+    if (!testReg.email) {
+      return cors(NextResponse.json({ error: "email é obrigatório no modo de teste" }, { status: 400 }));
+    }
+
+    const emailSent = await sendConfirmationEmail(testReg);
+    return cors(NextResponse.json({ ok: true, test: true, email_sent: emailSent }));
+  }
 
   if (!registration_id) {
     return cors(NextResponse.json({ error: "registration_id é obrigatório" }, { status: 400 }));
@@ -139,7 +161,7 @@ async function sendConfirmationEmail(reg) {
   };
 
   const optionLabel    = optionLabels[reg.option] || reg.option;
-  const accommodLabel  = reg.accommodation === "single" ? "Individual" : reg.accommodation === "double" ? "Compartilhada" : "N/A";
+  const accommodLabel  = reg.accommodation === "single" ? "Individual" : reg.accommodation === "double" ? "Compartilhada" : null;
 
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -159,17 +181,10 @@ async function sendConfirmationEmail(reg) {
         <!-- Header navy -->
         <tr>
           <td style="background:#0b1a3b;padding:2.5rem 2rem 2rem">
-            <table cellpadding="0" cellspacing="0" style="margin-bottom:.75rem">
-              <tr>
-                <td style="vertical-align:middle;padding-right:.75rem">
-                  <img src="https://camps.treine.com.gt/img/jordancamp_icon.png" alt="Jordan Camp 2026" width="48" height="48" style="display:block;border:0;border-radius:4px" />
-                </td>
-                <td style="vertical-align:middle">
-                  <p style="margin:0;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#e8a020;font-family:Arial,sans-serif">Jordan Camp 2026</p>
-                </td>
-              </tr>
-            </table>
-            <h1 style="margin:0;font-size:28px;font-weight:700;color:#f4e6bf;line-height:1.15;letter-spacing:-.5px">Inscrição confirmada!</h1>
+            <p style="margin:0 0 .75rem;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#e8a020;font-family:Arial,sans-serif">Jordan Camp 2026</p>
+            <h1 style="margin:0;font-size:28px;font-weight:700;color:#f4e6bf;line-height:1.15;letter-spacing:-.5px">
+              Inscrição confirmada!
+            </h1>
           </td>
         </tr>
 
@@ -259,12 +274,12 @@ async function sendConfirmationEmail(reg) {
               <tr>
                 <td style="padding-right:1rem;vertical-align:middle">
                   <a href="https://www.cobix.com.br" target="_blank">
-                    <img src="https://camps.treine.com.gt/img/cobix.png" alt="COBIX" width="115" height="40" style="display:block;border:0" />
+                    <img src="https://camps.treine.com.gt/img/cobix.png" alt="COBIX" width="115" height="40" style="display:block;border:0;filter:grayscale(1);opacity:.8" />
                   </a>
                 </td>
                 <td style="vertical-align:middle">
                   <a href="https://www.flwst.com.br" target="_blank">
-                    <img src="https://camps.treine.com.gt/img/flwst.png" alt="FLWST" width="40" height="40" style="display:block;border:0" />
+                    <img src="https://camps.treine.com.gt/img/flwst.png" alt="FLWST" width="40" height="40" style="display:block;border:0;filter:grayscale(1);opacity:.8" />
                   </a>
                 </td>
               </tr>
