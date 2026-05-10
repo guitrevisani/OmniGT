@@ -138,82 +138,166 @@ async function sendConfirmationEmail(reg) {
     "2d": "Camp · 2 dias · 12 e 13/11",
   };
 
-  const optionLabel = optionLabels[reg.option] || reg.option;
+  const optionLabel    = optionLabels[reg.option] || reg.option;
+  const accommodLabel  = reg.accommodation === "single" ? "Individual" : reg.accommodation === "double" ? "Compartilhada" : "N/A";
 
-  const html = `
-    <!DOCTYPE html>
-    <html lang="pt-BR">
-    <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-    <body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,sans-serif">
-      <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;padding:2rem 0">
-        <tr><td align="center">
-          <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#0b1a3b;border-radius:4px;overflow:hidden">
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
+</head>
+<body style="margin:0;padding:0;background:#f0ede6;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%">
 
-            <!-- Header -->
-            <tr>
-              <td style="padding:2.5rem 2rem;border-bottom:1px solid rgba(244,230,191,0.1)">
-                <p style="margin:0;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#e8a020;font-family:Arial,sans-serif">Jordan Camp 2026</p>
-                <h1 style="margin:.75rem 0 0;font-size:32px;font-weight:700;color:#f4e6bf;letter-spacing:-0.5px;line-height:1.1">
-                  Inscrição confirmada!
-                </h1>
-              </td>
-            </tr>
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0ede6;padding:2rem 0">
+    <tr><td align="center" style="padding:0 1rem">
 
-            <!-- Body -->
-            <tr>
-              <td style="padding:2rem">
-                <p style="margin:0 0 1.5rem;color:rgba(244,230,191,0.7);font-size:15px;line-height:1.6">
-                  Olá, <strong style="color:#f4e6bf">${reg.firstname}</strong>! Seu pagamento foi confirmado e sua vaga no Jordan Camp 2026 está garantida.
-                </p>
+      <!-- Card -->
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:4px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)">
 
-                <!-- Resumo -->
-                <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(244,230,191,0.05);border:1px solid rgba(244,230,191,0.1);margin-bottom:1.5rem">
-                  <tr>
-                    <td style="padding:1.25rem">
-                      <p style="margin:0 0 .75rem;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#e8a020">Sua inscrição</p>
-                      <table width="100%" cellpadding="0" cellspacing="0">
-                        <tr>
-                          <td style="padding:.4rem 0;font-size:13px;color:rgba(244,230,191,0.5);width:45%">Opção</td>
-                          <td style="padding:.4rem 0;font-size:13px;color:#f4e6bf">${optionLabel}</td>
-                        </tr>
-                        ${reg.accommodation ? `
-                        <tr>
-                          <td style="padding:.4rem 0;font-size:13px;color:rgba(244,230,191,0.5)">Acomodação</td>
-                          <td style="padding:.4rem 0;font-size:13px;color:#f4e6bf">${reg.accommodation === "individual" ? "Individual" : "Compartilhada"}</td>
-                        </tr>` : ""}
-                      </table>
-                    </td>
-                  </tr>
-                </table>
+        <!-- Header navy -->
+        <tr>
+          <td style="background:#0b1a3b;padding:2.5rem 2rem 2rem">
+            <table cellpadding="0" cellspacing="0" style="margin-bottom:.75rem">
+              <tr>
+                <td style="vertical-align:middle;padding-right:.75rem">
+                  <img src="https://camps.treine.com.gt/img/jordancamp_icon.png" alt="Jordan Camp 2026" width="48" height="48" style="display:block;border:0;border-radius:4px" />
+                </td>
+                <td style="vertical-align:middle">
+                  <p style="margin:0;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#e8a020;font-family:Arial,sans-serif">Jordan Camp 2026</p>
+                </td>
+              </tr>
+            </table>
+            <h1 style="margin:0;font-size:28px;font-weight:700;color:#f4e6bf;line-height:1.15;letter-spacing:-.5px">Inscrição confirmada!</h1>
+          </td>
+        </tr>
 
-                <!-- Próximos passos -->
-                <p style="margin:0 0 .75rem;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#e8a020">Próximos passos</p>
-                <p style="margin:0 0 .5rem;color:rgba(244,230,191,0.7);font-size:14px;line-height:1.6">
-                  Em breve você receberá o link do grupo de WhatsApp do Jordan Camp 2026 com todas as informações sobre logística, equipamentos e programa.
-                </p>
-                <p style="margin:1rem 0 0;color:rgba(244,230,191,0.7);font-size:14px;line-height:1.6">
-                  Qualquer dúvida, responda este email ou fale pelo WhatsApp:
-                  <a href="https://wa.me/5511956384365" style="color:#e8a020;text-decoration:none">+55 11 95638-4365</a>
-                </p>
-              </td>
-            </tr>
+        <!-- Faixa âmbar -->
+        <tr>
+          <td style="background:#e8a020;padding:.65rem 2rem">
+            <p style="margin:0;font-size:13px;color:#0b1a3b;font-weight:700">
+              Sua vaga no Jordan Camp 2026 está garantida.
+            </p>
+          </td>
+        </tr>
 
-            <!-- Footer -->
-            <tr>
-              <td style="padding:1.5rem 2rem;border-top:1px solid rgba(244,230,191,0.1)">
-                <p style="margin:0;font-size:12px;color:rgba(244,230,191,0.3);line-height:1.6">
-                  JordanCamp 2026 · desenvolvido por
-                  <a href="https://treine.com.gt" style="color:rgba(244,230,191,0.4);text-decoration:none">treine.com.gt</a>
-                </p>
-              </td>
-            </tr>
+        <!-- Body claro -->
+        <tr>
+          <td style="padding:2rem 2rem 1.5rem">
+            <p style="margin:0 0 1.5rem;color:#333;font-size:15px;line-height:1.7">
+              Olá, <strong>${reg.firstname}</strong>! Recebemos a confirmação do seu pagamento.
+              Abaixo estão os dados da sua inscrição.
+            </p>
 
-          </table>
-        </td></tr>
+            <!-- Tabela de resumo -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e0d9cc;margin-bottom:1.75rem">
+              <tr>
+                <td colspan="2" style="background:#f7f3ec;padding:.85rem 1rem;border-bottom:1px solid #e0d9cc">
+                  <p style="margin:0;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#9a7d3a;font-weight:700">Sua inscrição</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:.6rem 1rem;font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.05em;width:40%;border-bottom:1px solid #f0ede6">Opção</td>
+                <td style="padding:.6rem 1rem;font-size:13px;color:#1a1a1a;font-weight:600;border-bottom:1px solid #f0ede6">${optionLabel}</td>
+              </tr>
+              ${accommodLabel ? `<tr>
+                <td style="padding:.6rem 1rem;font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.05em;width:40%;border-bottom:1px solid #f0ede6">Acomodação</td>
+                <td style="padding:.6rem 1rem;font-size:13px;color:#1a1a1a;font-weight:600;border-bottom:1px solid #f0ede6">${accommodLabel}</td>
+              </tr>` : ""}
+              <tr>
+                <td style="padding:.6rem 1rem;font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.05em">Nome</td>
+                <td style="padding:.6rem 1rem;font-size:13px;color:#1a1a1a;font-weight:600">${reg.firstname} ${reg.lastname}</td>
+              </tr>
+            </table>
+
+            <!-- Grupo WhatsApp -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f3ec;border:1px solid #e0d9cc;margin-bottom:1.75rem">
+              <tr>
+                <td style="padding:1.25rem 1.5rem">
+                  <p style="margin:0 0 .5rem;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#9a7d3a;font-weight:700">Próximo passo</p>
+                  <p style="margin:0 0 1rem;font-size:14px;color:#333;line-height:1.6">
+                    Entre no grupo de WhatsApp do Jordan Camp 2026 para receber todas as informações sobre logística, equipamentos e programa.
+                  </p>
+                  <a href="https://chat.whatsapp.com/CTiD5zY0onFF0ec3Gt9Pd0"
+                     style="display:inline-block;background:#25d366;color:#ffffff;font-size:13px;font-weight:700;text-decoration:none;padding:.7rem 1.5rem;border-radius:2px;letter-spacing:.05em">
+                    Entrar no grupo →
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Contato -->
+            <p style="margin:0;font-size:13px;color:#666;line-height:1.7">
+              Dúvidas? Responda este email ou fale pelo WhatsApp:
+              <a href="https://wa.me/5511956384365" style="color:#9a7d3a;text-decoration:none;font-weight:700">+55 11 95638-4365</a>
+            </p>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background:#f7f3ec;padding:1.5rem 2rem;border-top:1px solid #e0d9cc">
+
+            <!-- Info -->
+            <p style="margin:0 0 .25rem;font-size:13px;font-weight:700;color:#333;letter-spacing:.03em">JordanCamp 2026</p>
+            <p style="margin:0 0 .75rem;font-size:12px;color:#666;line-height:1.6">
+              Desenvolvido para a comunidade
+              <a href="https://www.instagram.com/valepedal" style="color:#333;text-decoration:none;font-weight:700">@ValePedal</a>
+              &nbsp;·&nbsp;
+              <a href="mailto:gt@treine.com.gt" style="color:#666;text-decoration:underline">gt@treine.com.gt</a>
+              &nbsp;·&nbsp;
+              <a href="https://wa.me/5511956384365" style="color:#2CB742;text-decoration:none">WhatsApp</a>
+            </p>
+
+            <!-- Divisor -->
+            <div style="border-top:1px solid #e0d9cc;margin:.75rem 0"></div>
+
+            <!-- Apoio -->
+            <p style="margin:0 0 .5rem;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#aaa">Apoio</p>
+            <table cellpadding="0" cellspacing="0" style="margin-bottom:.75rem">
+              <tr>
+                <td style="padding-right:1rem;vertical-align:middle">
+                  <a href="https://www.cobix.com.br" target="_blank">
+                    <img src="https://camps.treine.com.gt/img/cobix.png" alt="COBIX" width="115" height="40" style="display:block;border:0;filter:grayscale(1);opacity:.8" />
+                  </a>
+                </td>
+                <td style="vertical-align:middle">
+                  <a href="https://www.flwst.com.br" target="_blank">
+                    <img src="https://camps.treine.com.gt/img/flwst.png" alt="FLWST" width="40" height="40" style="display:block;border:0;filter:grayscale(1);opacity:.8" />
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Realização -->
+            <p style="margin:0 0 .5rem;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#aaa">Realização</p>
+            <table cellpadding="0" cellspacing="0" style="margin-bottom:1rem">
+              <tr>
+                <td style="padding-right:1rem;vertical-align:middle">
+                  <a href="https://www.treine.com.gt" target="_blank">
+                    <img src="https://camps.treine.com.gt/img/treine.png" alt="treine.com.gt" width="40" height="40" style="display:block;border:0" />
+                  </a>
+                </td>
+                <td style="vertical-align:middle">
+                  <a href="https://www.instagram.com/valepedal" target="_blank">
+                    <img src="https://camps.treine.com.gt/img/valepedal.png" alt="ValePedal" width="40" height="40" style="display:block;border:0" />
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:0;font-size:11px;color:#bbb">© 2026 Todos os direitos reservados.</p>
+
+          </td>
+        </tr>
+
       </table>
-    </body>
-    </html>
-  `;
+    </td></tr>
+  </table>
+
+</body>
+</html>`;
 
   try {
     const res = await fetch("https://api.zeptomail.com/v1.1/email", {
@@ -225,7 +309,7 @@ async function sendConfirmationEmail(reg) {
       },
       body: JSON.stringify({
         from: {
-          address: "gt@treine.com.gt",
+          address: "jordancamp26@treine.com.gt",
           name:    "JordanCamp 2026",
         },
         to: [{
