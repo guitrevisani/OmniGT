@@ -75,28 +75,51 @@ export async function POST(request) {
     const limits     = metadata.limits || null;
 
     // ── Verifica limites ──────────────────────────────────
+    const protection2dActive = metadata.protection_2d_active === true;
+
     if (limits) {
-      // Limite por opção
-      if (limits[option] != null) {
-        const optCount = await query(
+      if (option === "1d") {
+        const count1d = await query(
           `SELECT COUNT(*) FROM registrations
-           WHERE event_slug = $1 AND option = $2 AND status != 'cancelled'`,
-          [event_slug, option]
+           WHERE event_slug = $1 AND option = '1d'
+             AND status NOT IN ('cancelled','waitlist')`,
+          [event_slug]
         );
-        if (Number(optCount.rows[0].count) >= limits[option]) {
-          return cors(NextResponse.json({ error: "Vagas esgotadas para esta opção" }, { status: 409 }));
+        const count2d = protection2dActive ? await query(
+          `SELECT COUNT(*) FROM registrations
+           WHERE event_slug = $1 AND option = '2d'
+             AND status NOT IN ('cancelled','waitlist')`,
+          [event_slug]
+        ) : { rows: [{ count: 0 }] };
+
+        const used1d   = Number(count1d.rows[0].count);
+        const reserved = Number(count2d.rows[0].count);
+        const limit1d  = limits["1d"] || 15;
+
+        if (used1d + reserved >= limit1d) {
+          return cors(NextResponse.json({
+            error:    "Vagas esgotadas para esta opção",
+            waitlist: true,
+          }, { status: 409 }));
         }
       }
 
-      // Limite total
-      if (limits.total != null) {
-        const totalCount = await query(
+      if (option === "2d") {
+        const rooms2d = await query(
           `SELECT COUNT(*) FROM registrations
-           WHERE event_slug = $1 AND status != 'cancelled'`,
+           WHERE event_slug = $1 AND option = '2d'
+             AND status NOT IN ('cancelled','waitlist')
+             AND (room_partner IS NULL OR room_partner->>'id' IS NULL)`,
           [event_slug]
         );
-        if (Number(totalCount.rows[0].count) >= limits.total) {
-          return cors(NextResponse.json({ error: "Evento esgotado" }, { status: 409 }));
+        const roomsUsed  = Number(rooms2d.rows[0].count);
+        const roomsLimit = limits["2d_rooms"] || 2;
+
+        if (roomsUsed >= roomsLimit) {
+          return cors(NextResponse.json({
+            error:    "Vagas esgotadas para esta opção",
+            waitlist: true,
+          }, { status: 409 }));
         }
       }
     }

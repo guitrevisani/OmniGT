@@ -75,11 +75,9 @@ export async function POST(request) {
       room_partner:  null,
       status:        "pending",
     };
-
     if (!testReg.email) {
       return cors(NextResponse.json({ error: "email é obrigatório no modo de teste" }, { status: 400 }));
     }
-
     const emailSent = await sendConfirmationEmail(testReg);
     return cors(NextResponse.json({ ok: true, test: true, email_sent: emailSent }));
   }
@@ -161,7 +159,7 @@ async function sendConfirmationEmail(reg) {
   };
 
   const optionLabel    = optionLabels[reg.option] || reg.option;
-  const accommodLabel  = reg.accommodation === "single" ? "Individual" : reg.accommodation === "double" ? "Compartilhada" : null;
+  const accommodLabel  = reg.accommodation === "single" ? "Individual" : reg.accommodation === "double" ? "Compartilhada" : "N/A";
 
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -181,10 +179,17 @@ async function sendConfirmationEmail(reg) {
         <!-- Header navy -->
         <tr>
           <td style="background:#0b1a3b;padding:2.5rem 2rem 2rem">
-            <p style="margin:0 0 .75rem;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#e8a020;font-family:Arial,sans-serif">Jordan Camp 2026</p>
-            <h1 style="margin:0;font-size:28px;font-weight:700;color:#f4e6bf;line-height:1.15;letter-spacing:-.5px">
-              Inscrição confirmada!
-            </h1>
+            <table cellpadding="0" cellspacing="0" style="margin-bottom:.75rem">
+              <tr>
+                <td style="vertical-align:middle;padding-right:.75rem">
+                  <img src="https://camps.treine.com.gt/img/jordancamp_icon.png" alt="Jordan Camp 2026" width="48" height="48" style="display:block;border:0;border-radius:4px" />
+                </td>
+                <td style="vertical-align:middle">
+                  <p style="margin:0;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#e8a020;font-family:Arial,sans-serif">Jordan Camp 2026</p>
+                </td>
+              </tr>
+            </table>
+            <h1 style="margin:0;font-size:28px;font-weight:700;color:#f4e6bf;line-height:1.15;letter-spacing:-.5px">Inscrição confirmada!</h1>
           </td>
         </tr>
 
@@ -243,9 +248,13 @@ async function sendConfirmationEmail(reg) {
             </table>
 
             <!-- Contato -->
-            <p style="margin:0;font-size:13px;color:#666;line-height:1.7">
+            <p style="margin:0 0 1rem;font-size:13px;color:#666;line-height:1.7">
               Dúvidas? Responda este email ou fale pelo WhatsApp:
               <a href="https://wa.me/5511956384365" style="color:#9a7d3a;text-decoration:none;font-weight:700">+55 11 95638-4365</a>
+            </p>
+            <p style="margin:0;font-size:12px;color:#aaa;line-height:1.6">
+              Caso precise cancelar sua inscrição, consulte nossa
+              <a href="https://camps.treine.com.gt/jordancamp2026/cancelamento.html" style="color:#9a7d3a;text-decoration:underline">Política de Cancelamento</a>.
             </p>
           </td>
         </tr>
@@ -259,7 +268,7 @@ async function sendConfirmationEmail(reg) {
             <p style="margin:0 0 .75rem;font-size:12px;color:#666;line-height:1.6">
               Desenvolvido para a comunidade
               <a href="https://www.instagram.com/valepedal" style="color:#333;text-decoration:none;font-weight:700">@ValePedal</a>
-              &nbsp;·&nbsp;
+              <br>
               <a href="mailto:gt@treine.com.gt" style="color:#666;text-decoration:underline">gt@treine.com.gt</a>
               &nbsp;·&nbsp;
               <a href="https://wa.me/5511956384365" style="color:#2CB742;text-decoration:none">WhatsApp</a>
@@ -274,12 +283,12 @@ async function sendConfirmationEmail(reg) {
               <tr>
                 <td style="padding-right:1rem;vertical-align:middle">
                   <a href="https://www.cobix.com.br" target="_blank">
-                    <img src="https://camps.treine.com.gt/img/cobix.png" alt="COBIX" width="115" height="40" style="display:block;border:0;filter:grayscale(1);opacity:.8" />
+                    <img src="https://camps.treine.com.gt/img/cobix.png" alt="COBIX" width="115" height="40" style="display:block;border:0" />
                   </a>
                 </td>
                 <td style="vertical-align:middle">
                   <a href="https://www.flwst.com.br" target="_blank">
-                    <img src="https://camps.treine.com.gt/img/flwst.png" alt="FLWST" width="40" height="40" style="display:block;border:0;filter:grayscale(1);opacity:.8" />
+                    <img src="https://camps.treine.com.gt/img/flwst.png" alt="FLWST" width="40" height="40" style="display:block;border:0" />
                   </a>
                 </td>
               </tr>
