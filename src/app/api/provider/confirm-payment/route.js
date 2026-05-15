@@ -282,12 +282,17 @@ async function sendConfirmationEmail(reg) {
             <table cellpadding="0" cellspacing="0" style="margin-bottom:.75rem">
               <tr>
                 <td style="padding-right:1rem;vertical-align:middle">
-                  <a href="https://www.cobix.com.br" target="_blank">
+                  <a href="https://www.cobix.com.br?utm_source=jordancamp2026&utm_medium=mail" target="_blank">
                     <img src="https://camps.treine.com.gt/img/cobix.png" alt="COBIX" width="115" height="40" style="display:block;border:0" />
                   </a>
                 </td>
+                <td style="padding-right:1rem;vertical-align:middle">
+                  <a href="https://clubesantuu.com.br?utm_source=jordancamp2026&utm_medium=mail" target="_blank">
+                    <img src="https://camps.treine.com.gt/img/santuu.png" alt="COBIX" width="74" height="40" style="display:block;border:0" />
+                  </a>
+                </td>
                 <td style="vertical-align:middle">
-                  <a href="https://www.flwst.com.br" target="_blank">
+                  <a href="https://www.flwst.com.br?utm_source=jordancamp2026&utm_medium=mail" target="_blank">
                     <img src="https://camps.treine.com.gt/img/flwst.png" alt="FLWST" width="40" height="40" style="display:block;border:0" />
                   </a>
                 </td>
@@ -299,7 +304,7 @@ async function sendConfirmationEmail(reg) {
             <table cellpadding="0" cellspacing="0" style="margin-bottom:1rem">
               <tr>
                 <td style="padding-right:1rem;vertical-align:middle">
-                  <a href="https://www.treine.com.gt" target="_blank">
+                  <a href="https://www.treine.com.gt?utm_source=jordancamp2026&utm_medium=mail" target="_blank">
                     <img src="https://camps.treine.com.gt/img/treine.png" alt="treine.com.gt" width="40" height="40" style="display:block;border:0" />
                   </a>
                 </td>
